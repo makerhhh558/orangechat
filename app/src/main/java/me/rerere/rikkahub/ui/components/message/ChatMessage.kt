@@ -17,9 +17,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -108,7 +111,14 @@ import me.rerere.rikkahub.ui.components.ui.Favicon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.components.ui.toComposeColor
+import me.rerere.rikkahub.ui.context.LocalChatThemeSpec
 import me.rerere.rikkahub.ui.context.LocalDisplaySettings
+import me.rerere.rikkahub.data.theme.BubbleStyle
+import me.rerere.rikkahub.data.theme.TailSide
+import me.rerere.rikkahub.data.theme.side
+import me.rerere.rikkahub.data.theme.tailSpace
+import me.rerere.rikkahub.data.theme.toShape
+import me.rerere.rikkahub.data.theme.withUniformRadius
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.data.datastore.ChatFontFamily
 import androidx.compose.ui.text.font.Font
@@ -313,6 +323,18 @@ private fun MessagePartsBlock(
     val displaySettings = LocalDisplaySettings.current
     val bubbleAlpha = 1f - displaySettings.chatBubbleTransparency / 100f
     val partsState by rememberUpdatedState(parts)
+
+    // 未启用 CSS 主题时，沿用"显示设置"里的圆角滑块，保证既有行为不变
+    val themeSpec = LocalChatThemeSpec.current
+    val themeActive = displaySettings.chatThemeEnabled
+    val userBubbleStyle = remember(themeSpec, themeActive, displaySettings.bubbleCornerRadius) {
+        if (themeActive) themeSpec.userBubble
+        else themeSpec.userBubble.withUniformRadius(displaySettings.bubbleCornerRadius)
+    }
+    val assistantBubbleStyle = remember(themeSpec, themeActive, displaySettings.bubbleCornerRadius) {
+        if (themeActive) themeSpec.assistantBubble
+        else themeSpec.assistantBubble.withUniformRadius(displaySettings.bubbleCornerRadius)
+    }
  
     val handleClickCitation: (String) -> Unit = remember {
         handler@{ citationId ->
@@ -402,15 +424,18 @@ private fun MessagePartsBlock(
                                             displayText.splitIntoBubbleSegments()
                                         }
                                         Column(
-                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalArrangement = Arrangement.spacedBy(userBubbleStyle.segmentSpacing.dp),
                                             horizontalAlignment = Alignment.End,
                                         ) {
                                             bubbleSegments.fastForEachIndexed { segIndex, segment ->
                                                 key(segIndex) {
                                                     BubbleSurface(
                                                         imagePath = displaySettings.userBubbleImagePath,
-                                                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
-                                                        color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
+                                                        style = userBubbleStyle,
+                                                        isUser = true,
+                                                        color = userBubbleStyle.backgroundColor?.let { it.toComposeColor() }
+                                                            ?: displaySettings.userBubbleColor?.let { it.toComposeColor() }
+                                                            ?: MaterialTheme.colorScheme.secondaryContainer,
                                                         overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                                         bubbleAlpha = bubbleAlpha,
                                                         onClick = { onUserMessageClick?.invoke() },
@@ -430,8 +455,11 @@ private fun MessagePartsBlock(
                                     } else {
                                         BubbleSurface(
                                             imagePath = displaySettings.userBubbleImagePath,
-                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
-                                            color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
+                                            style = userBubbleStyle,
+                                            isUser = true,
+                                            color = userBubbleStyle.backgroundColor?.let { it.toComposeColor() }
+                                                ?: displaySettings.userBubbleColor?.let { it.toComposeColor() }
+                                                ?: MaterialTheme.colorScheme.secondaryContainer,
                                             overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                             bubbleAlpha = bubbleAlpha,
                                             onClick = { onUserMessageClick?.invoke() },
@@ -453,15 +481,18 @@ private fun MessagePartsBlock(
                                         displayText.splitIntoBubbleSegments()
                                     }
                                     Column(
-                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(assistantBubbleStyle.segmentSpacing.dp),
                                     ) {
                                         bubbleSegments.fastForEachIndexed { segIndex, segment ->
                                             key(segIndex) {
                                                 if (displaySettings.showAssistantBubble) {
                                                     BubbleSurface(
                                                         imagePath = displaySettings.assistantBubbleImagePath,
-                                                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
-                                                        color = displaySettings.assistantBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                        style = assistantBubbleStyle,
+                                                        isUser = false,
+                                                        color = assistantBubbleStyle.backgroundColor?.let { it.toComposeColor() }
+                                                            ?: displaySettings.assistantBubbleColor?.let { it.toComposeColor() }
+                                                            ?: MaterialTheme.colorScheme.surfaceContainerHigh,
                                                         overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                                         bubbleAlpha = bubbleAlpha,
                                                     ) {
@@ -493,8 +524,11 @@ private fun MessagePartsBlock(
                                     if (displaySettings.showAssistantBubble) {
                                         BubbleSurface(
                                             imagePath = displaySettings.assistantBubbleImagePath,
-                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
-                                            color = displaySettings.assistantBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            style = assistantBubbleStyle,
+                                            isUser = false,
+                                            color = assistantBubbleStyle.backgroundColor?.let { it.toComposeColor() }
+                                                ?: displaySettings.assistantBubbleColor?.let { it.toComposeColor() }
+                                                ?: MaterialTheme.colorScheme.surfaceContainerHigh,
                                             overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                             bubbleAlpha = bubbleAlpha,
                                         ) {
@@ -715,22 +749,53 @@ private fun MessagePartsBlock(
     }
 }
  
+/**
+ * 气泡容器。
+ *
+ * 形状、内边距、描边、最大宽度都来自 CSS 主题 [style]；
+ * [isUser] 用于让尖钩在 `tail-position: auto` 时自动贴到正确的一侧。
+ *
+ * 尖钩画在气泡本体之外，所以要在对应一侧额外留出 [tailSpace] 的内边距，
+ * 否则内容会压到尖钩上。
+ */
 @Composable
 private fun BubbleSurface(
     imagePath: String,
-    cornerRadius: Dp,
+    style: BubbleStyle,
+    isUser: Boolean,
     color: Color,
     overlayEnabled: Boolean,
     bubbleAlpha: Float,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val shape = remember(style, isUser) { style.toShape(isUser) }
+    val tailSide = remember(style, isUser) {
+        if (style.tailSpace > 0.dp) style.tailPosition.side(isUser) else null
+    }
+    val contentPadding = PaddingValues(
+        start = style.paddingHorizontal.dp + if (tailSide == TailSide.LEFT) style.tailSpace else 0.dp,
+        end = style.paddingHorizontal.dp + if (tailSide == TailSide.RIGHT) style.tailSpace else 0.dp,
+        top = style.paddingVertical.dp,
+        bottom = style.paddingVertical.dp,
+    )
+    val borderColor = style.borderColor?.let { it.toComposeColor() }
+    val widthModifier = style.maxWidthPercent
+        ?.let { Modifier.fillMaxWidth(it.coerceIn(0.1f, 1f)) }
+        ?: Modifier
+
     val hasImage = imagePath.isNotBlank() && java.io.File(imagePath).exists()
     if (hasImage) {
         Box(
             modifier = Modifier
                 .animateContentSize()
-                .clip(RoundedCornerShape(cornerRadius))
+                .then(widthModifier)
+                .clip(shape)
+                .then(
+                    if (style.borderWidth > 0f && borderColor != null) {
+                        Modifier.border(style.borderWidth.dp, borderColor, shape)
+                    } else Modifier
+                )
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
         ) {
             AsyncImage(
@@ -746,16 +811,21 @@ private fun BubbleSurface(
                         .background(color.copy(alpha = bubbleAlpha))
                 )
             }
-            Column(modifier = Modifier.padding(8.dp)) { content() }
+            Column(modifier = Modifier.padding(contentPadding)) { content() }
         }
     } else {
         Surface(
-            modifier = Modifier.animateContentSize(),
-            shape = RoundedCornerShape(cornerRadius),
+            modifier = Modifier
+                .animateContentSize()
+                .then(widthModifier),
+            shape = shape,
             color = color.copy(alpha = bubbleAlpha),
+            border = if (style.borderWidth > 0f && borderColor != null) {
+                BorderStroke(style.borderWidth.dp, borderColor)
+            } else null,
             onClick = onClick ?: {},
         ) {
-            Column(modifier = Modifier.padding(8.dp)) { content() }
+            Column(modifier = Modifier.padding(contentPadding)) { content() }
         }
     }
 }
@@ -950,10 +1020,12 @@ internal fun VoiceMessageBubble(
         }
     }
  
+    val voiceStyle = LocalChatThemeSpec.current.voice
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = if (isUser) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.tertiaryContainer,
+        shape = RoundedCornerShape(voiceStyle.cornerRadius.dp),
+        color = voiceStyle.backgroundColor?.let { it.toComposeColor() }
+            ?: if (isUser) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.tertiaryContainer,
         onClick = {
             if (isPlaying) {
                 mediaPlayer?.let {
@@ -979,7 +1051,12 @@ internal fun VoiceMessageBubble(
             }
         },
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(
+            modifier = Modifier.padding(
+                horizontal = voiceStyle.paddingHorizontal.dp,
+                vertical = voiceStyle.paddingVertical.dp,
+            )
+        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -989,18 +1066,23 @@ internal fun VoiceMessageBubble(
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer
                     else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(voiceStyle.iconSize.dp)
                 )
                 // Waveform bars
-                val waveformBars = remember(voiceMessage.url) {
+                val waveformBars = remember(voiceMessage.url, voiceStyle.barCount) {
                     val rnd = java.util.Random(voiceMessage.url.hashCode().toLong())
-                    List(24) { 0.2f + rnd.nextFloat() * 0.8f }
+                    List(voiceStyle.barCount.coerceIn(1, 200)) { 0.2f + rnd.nextFloat() * 0.8f }
                 }
-                val waveformColor = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
-                Canvas(modifier = Modifier.width(60.dp).height(24.dp)) {
+                val waveformColor = voiceStyle.waveformColor?.let { it.toComposeColor() }
+                    ?: if (isUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                    else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
+                Canvas(
+                    modifier = Modifier
+                        .width(voiceStyle.waveformWidth.dp)
+                        .height(voiceStyle.waveformHeight.dp)
+                ) {
                     val barCount = waveformBars.size
-                    val barWidth = 2.5f
+                    val barWidth = voiceStyle.barWidth.coerceAtLeast(0.5f)
                     val gap = (size.width - barWidth * barCount) / (barCount - 1).coerceAtLeast(1)
                     waveformBars.forEachIndexed { index, barRatio ->
                         val barHeight = size.height * barRatio.coerceIn(0.2f, 1f)

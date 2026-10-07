@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,7 @@ private fun AIIcon(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    shapeOverride: Shape? = null,
 ) {
     val contentColor = LocalContentColor.current
     val context = LocalContext.current
@@ -50,9 +52,10 @@ private fun AIIcon(
             )
             .build()
     }
+    val defaultShape = rememberAvatarShape(loading)
     Surface(
         modifier = modifier.size(24.dp),
-        shape = rememberAvatarShape(loading),
+        shape = shapeOverride ?: defaultShape,
         color = color,
     ) {
         AsyncImage(
@@ -69,9 +72,16 @@ fun AutoAIIcon(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    shapeOverride: Shape? = null,
 ) {
     val path = remember(name) { computeAIIconByName(name) } ?: run {
-        TextAvatar(text = name, modifier = modifier, loading = loading, color = color)
+        TextAvatar(
+            text = name,
+            modifier = modifier,
+            loading = loading,
+            color = color,
+            shapeOverride = shapeOverride,
+        )
         return
     }
     AIIcon(
@@ -80,6 +90,7 @@ fun AutoAIIcon(
         modifier = modifier,
         loading = loading,
         color = color,
+        shapeOverride = shapeOverride,
     )
 }
 

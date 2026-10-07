@@ -7,7 +7,9 @@
 package me.rerere.rikkahub.ui.components.message
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,11 +38,26 @@ import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.theme.AvatarStyle
+import me.rerere.rikkahub.data.theme.toShapeOrNull
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.toComposeColor
+import me.rerere.rikkahub.ui.context.LocalChatThemeSpec
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.toLocalString
 import java.io.File
+
+/** 头像描边。宽度为 0 或没给颜色时什么都不做。 */
+@Composable
+private fun Modifier.avatarBorder(style: AvatarStyle): Modifier {
+    if (style.borderWidth <= 0f) return this
+    val color = style.borderColor?.toComposeColor() ?: LocalContentColor.current
+    return this.border(
+        border = BorderStroke(style.borderWidth.dp, color),
+        shape = style.toShapeOrNull() ?: CircleShape,
+    )
+}
 
 @Composable
 private fun AvatarFrameOverlay(
@@ -78,10 +96,12 @@ fun ChatMessageUserAvatar(
     modifier: Modifier = Modifier,
 ) {
     val settings = LocalSettings.current
-    if (message.role == MessageRole.USER && !message.parts.isEmptyUIMessage() && settings.displaySetting.showUserAvatar) {
+    val style = LocalChatThemeSpec.current.userAvatar
+    val visible = style.visible ?: settings.displaySetting.showUserAvatar
+    if (message.role == MessageRole.USER && !message.parts.isEmptyUIMessage() && visible) {
         Row(
             modifier = modifier.padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            horizontalArrangement = Arrangement.spacedBy(style.gap.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
@@ -106,16 +126,19 @@ fun ChatMessageUserAvatar(
             Box(contentAlignment = Alignment.Center) {
                 UIAvatar(
                     name = nickname,
-                    modifier = Modifier.size(36.dp),
+                    modifier = Modifier
+                        .size(style.size.dp)
+                        .avatarBorder(style),
                     value = avatar,
                     loading = false,
+                    shapeOverride = style.toShapeOrNull(),
                 )
                 AvatarFrameOverlay(
                     framePath = settings.displaySetting.userAvatarFramePath,
                     offsetX = settings.displaySetting.userAvatarFrameOffsetX,
                     offsetY = settings.displaySetting.userAvatarFrameOffsetY,
                     scale = settings.displaySetting.userAvatarFrameScale,
-                    baseSize = 36f,
+                    baseSize = style.size,
                 )
             }
         }
@@ -131,11 +154,12 @@ fun ChatMessageAssistantAvatar(
     modifier: Modifier = Modifier,
 ) {
     val settings = LocalSettings.current
-    val showIcon = settings.displaySetting.showModelIcon
+    val style = LocalChatThemeSpec.current.assistantAvatar
+    val showIcon = style.visible ?: settings.displaySetting.showModelIcon
     val useAssistantAvatar = assistant?.useAssistantAvatar == true
     if (message.role == MessageRole.ASSISTANT && (model != null || useAssistantAvatar)) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(style.gap.dp),
             verticalAlignment = Alignment.CenterVertically,
             modifier = modifier
         ) {
@@ -144,16 +168,19 @@ fun ChatMessageAssistantAvatar(
                     Box(contentAlignment = Alignment.Center) {
                         UIAvatar(
                             name = assistant.name,
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier
+                                .size(style.size.dp)
+                                .avatarBorder(style),
                             value = assistant.avatar,
                             loading = loading,
+                            shapeOverride = style.toShapeOrNull(),
                         )
                         AvatarFrameOverlay(
                             framePath = settings.displaySetting.aiAvatarFramePath,
                             offsetX = settings.displaySetting.aiAvatarFrameOffsetX,
                             offsetY = settings.displaySetting.aiAvatarFrameOffsetY,
                             scale = settings.displaySetting.aiAvatarFrameScale,
-                            baseSize = 32f,
+                            baseSize = style.size,
                         )
                     }
                 }
@@ -181,15 +208,18 @@ fun ChatMessageAssistantAvatar(
                     Box(contentAlignment = Alignment.Center) {
                         AutoAIIcon(
                             name = model.modelId,
-                            modifier = Modifier.size(32.dp),
-                            loading = loading
+                            modifier = Modifier
+                                .size(style.size.dp)
+                                .avatarBorder(style),
+                            loading = loading,
+                            shapeOverride = style.toShapeOrNull(),
                         )
                         AvatarFrameOverlay(
                             framePath = settings.displaySetting.aiAvatarFramePath,
                             offsetX = settings.displaySetting.aiAvatarFrameOffsetX,
                             offsetY = settings.displaySetting.aiAvatarFrameOffsetY,
                             scale = settings.displaySetting.aiAvatarFrameScale,
-                            baseSize = 32f,
+                            baseSize = style.size,
                         )
                     }
                 }

@@ -718,6 +718,9 @@ data class DisplaySetting(
     val assistantBubbleImagePath: String = "",
     val bubbleCornerRadius: Float = 16f,
     val bubbleImageOverlayEnabled: Boolean = false, // 关=纯图片, 开=图片+主题色遮罩
+    // CSS 聊天主题：themes/<名称>/*.css，空=使用内置默认样式
+    val chatThemeName: String = "",
+    val chatThemeEnabled: Boolean = false,
 )
 
 @Serializable
