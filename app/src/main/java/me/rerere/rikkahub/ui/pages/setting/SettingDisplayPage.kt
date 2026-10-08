@@ -86,6 +86,11 @@ fun SettingDisplayPage() {
                         supportingContent = { Text("头像、气泡、字体大小、自定义字体") },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.SettingDisplayChatTheme) },
+                        headlineContent = { Text("聊天主题 (CSS)") },
+                        supportingContent = { Text("用 CSS 自定义气泡、尖钩、头像、间距、语音样式") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingDisplayCodeInteraction) },
                         headlineContent = { Text("代码与交互") },
                         supportingContent = { Text("代码块、回车发送、滚动、音量键等") },

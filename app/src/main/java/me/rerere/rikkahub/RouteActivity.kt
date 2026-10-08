@@ -81,10 +81,12 @@ import me.rerere.rikkahub.data.db.DatabaseMigrationTracker
 import me.rerere.rikkahub.data.db.MigrationState
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.theme.ChatThemeRepository
 import me.rerere.rikkahub.ui.activity.SafeModeActivity
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.ui.context.LocalASRState
+import me.rerere.rikkahub.ui.context.LocalChatThemeSpec
 import me.rerere.rikkahub.ui.context.LocalCurrentAssistant
 import me.rerere.rikkahub.ui.context.LocalCurrentChatModel
 import me.rerere.rikkahub.ui.context.LocalDisplaySettings
@@ -136,6 +138,7 @@ import me.rerere.rikkahub.ui.pages.miniapp.MiniAppManagerPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
+import me.rerere.rikkahub.ui.pages.setting.SettingDisplayChatThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayCodeInteractionPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayColorPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayGeneralPage
@@ -357,6 +360,15 @@ class RouteActivity : ComponentActivity() {
         val eventBus = koinInject<AppEventBus>()
         val migrationState by DatabaseMigrationTracker.state.collectAsStateWithLifecycle()
 
+        // CSS 聊天主题: 开关或主题名变化时重新加载，解析失败会自动回退内置样式
+        val chatThemeRepo = koinInject<ChatThemeRepository>()
+        val chatThemeState by chatThemeRepo.loadState.collectAsStateWithLifecycle()
+        val chatThemeEnabled = settings.displaySetting.chatThemeEnabled
+        val chatThemeName = settings.displaySetting.chatThemeName
+        LaunchedEffect(chatThemeEnabled, chatThemeName) {
+            chatThemeRepo.reload(if (chatThemeEnabled) chatThemeName else "")
+        }
+
         val startScreen = Screen.Chat(
             id = if (readBooleanPreference("create_new_conversation_on_start", true)) {
                 Uuid.random().toString()
@@ -409,6 +421,7 @@ class RouteActivity : ComponentActivity() {
                 LocalToaster provides toastState,
                 LocalTTSState provides tts,
                 LocalASRState provides asr,
+                LocalChatThemeSpec provides chatThemeState.spec,
             ) {
                 Toaster(
                     state = toastState,
@@ -568,6 +581,9 @@ class RouteActivity : ComponentActivity() {
                             }
                             entry<Screen.SettingDisplayGeneral> {
                                 SettingDisplayGeneralPage()
+                            }
+                            entry<Screen.SettingDisplayChatTheme> {
+                                SettingDisplayChatThemePage()
                             }
                             entry<Screen.SettingDisplayNotification> {
                                 SettingDisplayNotificationPage()
@@ -987,6 +1003,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingDisplayNotification : Screen
+
+    @Serializable
+    data object SettingDisplayChatTheme : Screen
 
     @Serializable
     data object SettingProvider : Screen

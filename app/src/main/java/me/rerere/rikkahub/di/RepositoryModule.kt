@@ -87,6 +87,10 @@ val repositoryModule = module {
     }
 
     single {
+        me.rerere.rikkahub.data.theme.ChatThemeRepository(get())
+    }
+
+    single {
         SecurityAuditRepository(
             get<me.rerere.rikkahub.data.db.AppDatabase>().securityAuditDao()
         )

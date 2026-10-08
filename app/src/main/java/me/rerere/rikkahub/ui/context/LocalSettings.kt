@@ -14,6 +14,7 @@ import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.QuickMessage
+import me.rerere.rikkahub.data.theme.ChatThemeSpec
 
 val LocalSettings = compositionLocalOf<Settings> {
     error("No SettingsStore provided")
@@ -42,3 +43,9 @@ val LocalCurrentAssistant = compositionLocalOf<Assistant> {
 val LocalCurrentChatModel = compositionLocalOf<Model?> {
     error("LocalCurrentChatModel not provided")
 }
+
+/**
+ * 当前生效的聊天主题样式。
+ * 没有提供时退回内置默认样式，保证任何预览/独立 Composable 都能正常渲染。
+ */
+val LocalChatThemeSpec = compositionLocalOf { ChatThemeSpec.BUILTIN }
