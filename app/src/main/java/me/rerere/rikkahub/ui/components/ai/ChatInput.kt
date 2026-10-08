@@ -154,6 +154,8 @@ fun ChatInput(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onCompressContext: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job,
+    onSummarizeWindow: (onResult: (String) -> Unit) -> Job,
+    onSaveWindowSummary: (content: String, onSaved: () -> Unit) -> Job,
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
@@ -182,10 +184,12 @@ fun ChatInput(
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
+    var showSummaryDialog by remember { mutableStateOf(false) }
     fun dismissExpand() {
         expand = ExpandState.Collapsed
         showInjectionSheet = false
         showCompressDialog = false
+        showSummaryDialog = false
     }
 
     fun expandToggle(type: ExpandState) {
@@ -473,8 +477,8 @@ fun ChatInput(
 
     // Collapse when ime is visible
     val imeVisile = WindowInsets.isImeVisible
-    LaunchedEffect(imeVisile, showInjectionSheet, showCompressDialog) {
-        if (imeVisile && !showInjectionSheet && !showCompressDialog) {
+    LaunchedEffect(imeVisile, showInjectionSheet, showCompressDialog, showSummaryDialog) {
+        if (imeVisile && !showInjectionSheet && !showCompressDialog && !showSummaryDialog) {
             dismissExpand()
         }
     }
@@ -748,11 +752,15 @@ fun ChatInput(
                             assistant = assistant,
                             mcpManager = mcpManager,
                             onCompressContext = onCompressContext,
+                            onSummarizeWindow = onSummarizeWindow,
+                            onSaveWindowSummary = onSaveWindowSummary,
                             onUpdateAssistant = onUpdateAssistant,
                             showInjectionSheet = showInjectionSheet,
                             onShowInjectionSheetChange = { showInjectionSheet = it },
                             showCompressDialog = showCompressDialog,
                             onShowCompressDialogChange = { showCompressDialog = it },
+                            showSummaryDialog = showSummaryDialog,
+                            onShowSummaryDialogChange = { showSummaryDialog = it },
                             onDismiss = { dismissExpand() },
                             onTakePic = onLaunchCamera,
                             onPickImage = { imagePickerLauncher.launch("image/*") },

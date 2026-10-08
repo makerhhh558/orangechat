@@ -274,6 +274,17 @@
   <string name="chat_page_compress_target_tokens">Target Token Size</string>
   <string name="chat_page_compress_warning">⚠️ Compressing context will reset all messages in the current conversation</string>
   <string name="chat_page_compressing">Compressing...</string>
+  <string name="chat_page_summarize_window">Summarize Window</string>
+  <string name="chat_page_summarize_window_title">Summarize Current Window</string>
+  <string name="chat_page_summarize_window_desc">Summarize the current conversation window and save it to memory</string>
+  <string name="chat_page_summarize_window_generating">Summarizing...</string>
+  <string name="chat_page_summarize_window_result_label">Summary (editable)</string>
+  <string name="chat_page_summarize_window_regenerate">Regenerate</string>
+  <string name="chat_page_summarize_window_save">Save to Memory</string>
+  <string name="chat_page_summarize_window_saved">Saved to memory</string>
+  <string name="chat_page_summarize_window_empty">The summary is empty, nothing to save</string>
+  <string name="chat_page_summarize_window_no_messages">No messages in the current window to summarize</string>
+  <string name="chat_page_summarize_window_no_model">No summary model configured. Pick one in Settings → Default Models → Summary Model.</string>
   <string name="chat_page_conversation_system_prompt">Conversation System Prompt</string>
   <string name="chat_page_conversation_system_prompt_clear">Clear</string>
   <string name="chat_page_conversation_system_prompt_hint">Override the assistant\'s system prompt for this conversation</string>
@@ -347,6 +358,7 @@
   <string name="emoji_picker_search_placeholder">Search emojis...</string>
   <string name="emoji_picker_select_skin_tone">Select Skin Tone</string>
   <string name="error_title_compress_conversation">Conversation compression failed</string>
+  <string name="error_title_summarize_window">Window summarization failed</string>
   <string name="error_title_generate_title">Auto title generation failed</string>
   <string name="error_title_generation">Message generation failed</string>
   <string name="error_title_operation">Operation failed</string>
@@ -817,6 +829,9 @@
   <string name="setting_model_page_ocr_prompt_vars">Variables: Image data: {images}</string>
   <string name="setting_model_page_prompt">Prompt</string>
   <string name="setting_model_page_reset_to_default">Reset to default</string>
+  <string name="setting_model_page_summary_model">Summary Model</string>
+  <string name="setting_model_page_summary_model_desc">Used to summarize the current conversation window and save it to memory</string>
+  <string name="setting_model_page_summary_prompt_vars">Variables: {content}, {locale}</string>
   <string name="setting_model_page_suggestion_model">Chat Suggestion Model</string>
   <string name="setting_model_page_suggestion_model_desc">Model used to generate conversation suggestions, recommend using fast and inexpensive models</string>
   <string name="setting_model_page_suggestion_prompt_vars">Variables: Conversation content: {content}, Language: {locale}</string>

@@ -1362,6 +1362,74 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         saveConversation(conversationId, newConversation)
     }
 
+    // ---- 总结当前窗口 ----
+
+    /**
+     * 把当前窗口的消息交给「总结窗口模型」生成一条总结文本。
+     *
+     * 只生成，不落库；写入记忆由 [saveWindowSummary] 在用户点保存后完成。
+     * 与压缩不同，这里不会回落到当前聊天模型 —— 没配置就报错，提示去设置页选。
+     */
+    suspend fun summarizeWindow(conversation: Conversation): Result<String> = runCatching {
+        val settings = settingsStore.settingsFlow.first()
+        val model = settings.findModelById(settings.summaryModelId)
+            ?: throw IllegalStateException(context.getString(R.string.chat_page_summarize_window_no_model))
+        val provider = model.findProvider(settings.providers)
+            ?: throw IllegalStateException("Provider not found")
+        val providerHandler = providerManager.getProviderByType(provider)
+
+        val messages = conversation.currentMessages
+        if (messages.isEmpty()) {
+            throw IllegalStateException(context.getString(R.string.chat_page_summarize_window_no_messages))
+        }
+
+        val windowContent = messages.joinToString("\n\n") { it.summaryAsText() }
+        val filledPrompt = settings.summaryPrompt.applyPlaceholders(
+            "content" to windowContent,
+            "locale" to Locale.getDefault().displayName,
+        )
+        // 自定义提示词里没写 {content} 时，把窗口内容补到末尾，避免整段对话被丢掉
+        val prompt = if (settings.summaryPrompt.contains("{content}")) {
+            filledPrompt
+        } else {
+            "$filledPrompt\n\n<conversation>\n$windowContent\n</conversation>"
+        }
+
+        val result = providerHandler.generateText(
+            providerSetting = provider,
+            messages = listOf(UIMessage.user(prompt)),
+            params = TextGenerationParams(
+                model = model,
+            ),
+        )
+
+        result.choices[0].message?.toText()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw IllegalStateException("Failed to generate window summary")
+    }
+
+    /**
+     * 把（可能被用户编辑过的）总结文本作为一条新记忆写入当前助手。
+     *
+     * 记忆归属沿用 memory_tool 的规则：开了全局记忆写 [MemoryRepository.GLOBAL_MEMORY_ID]，
+     * 否则写助手自己的 id。
+     */
+    suspend fun saveWindowSummary(conversation: Conversation, content: String): Result<Unit> = runCatching {
+        val trimmed = content.trim()
+        if (trimmed.isEmpty()) {
+            throw IllegalStateException(context.getString(R.string.chat_page_summarize_window_empty))
+        }
+        val settings = settingsStore.settingsFlow.first()
+        val assistant = settings.getAssistantById(conversation.assistantId)
+            ?: settings.getCurrentAssistant()
+        val memoryAssistantId = if (assistant.useGlobalMemory) {
+            MemoryRepository.GLOBAL_MEMORY_ID
+        } else {
+            assistant.id.toString()
+        }
+        memoryRepository.addMemory(memoryAssistantId, trimmed)
+        Unit
+    }
+
     // ---- 通知 ----
 
     private fun sendGenerationDoneNotification(conversationId: Uuid, senderName: String) {

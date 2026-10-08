@@ -271,6 +271,17 @@
   <string name="chat_page_compress_target_tokens">目标Token大小</string>
   <string name="chat_page_compress_warning">⚠️ 压缩上下文将重置当前对话中的所有消息</string>
   <string name="chat_page_compressing">正在压缩...</string>
+  <string name="chat_page_summarize_window">总结窗口</string>
+  <string name="chat_page_summarize_window_title">总结当前窗口</string>
+  <string name="chat_page_summarize_window_desc">总结当前对话窗口并存入记忆</string>
+  <string name="chat_page_summarize_window_generating">正在总结...</string>
+  <string name="chat_page_summarize_window_result_label">总结内容（可编辑）</string>
+  <string name="chat_page_summarize_window_regenerate">重新生成</string>
+  <string name="chat_page_summarize_window_save">保存到记忆</string>
+  <string name="chat_page_summarize_window_saved">已存入记忆</string>
+  <string name="chat_page_summarize_window_empty">总结内容为空，无法保存</string>
+  <string name="chat_page_summarize_window_no_messages">当前窗口没有可总结的消息</string>
+  <string name="chat_page_summarize_window_no_model">未配置总结窗口模型，请到「设置 → 默认模型 → 总结窗口模型」里选择</string>
   <string name="chat_page_conversation_system_prompt">对话系统提示</string>
   <string name="chat_page_conversation_system_prompt_clear">清除</string>
   <string name="chat_page_conversation_system_prompt_hint">覆盖此对话的助手系统提示</string>
@@ -344,6 +355,7 @@
   <string name="emoji_picker_search_placeholder">搜索表情符号...</string>
   <string name="emoji_picker_select_skin_tone">选择肤色</string>
   <string name="error_title_compress_conversation">对话压缩失败</string>
+  <string name="error_title_summarize_window">窗口总结失败</string>
   <string name="error_title_generate_title">自动生成标题失败</string>
   <string name="error_title_generation">消息生成失败</string>
   <string name="error_title_operation">操作失败</string>
@@ -768,6 +780,9 @@
   <string name="setting_model_page_ocr_prompt_vars">变量：图像数据：{images}</string>
   <string name="setting_model_page_prompt">提示词</string>
   <string name="setting_model_page_reset_to_default">重置为默认</string>
+  <string name="setting_model_page_summary_model">总结窗口模型</string>
+  <string name="setting_model_page_summary_model_desc">用于总结当前对话窗口并存入记忆</string>
+  <string name="setting_model_page_summary_prompt_vars">变量：{content}、{locale}</string>
   <string name="setting_model_page_suggestion_model">聊天建议模型</string>
   <string name="setting_model_page_suggestion_model_desc">用于生成对话建议的模型, 推荐使用快速且便宜的模型</string>
   <string name="setting_model_page_suggestion_prompt_vars">变量: 对话内容: {content}, 语言: {locale}</string>

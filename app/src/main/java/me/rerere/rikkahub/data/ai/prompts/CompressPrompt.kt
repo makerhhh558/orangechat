@@ -24,3 +24,24 @@ internal val DEFAULT_COMPRESS_PROMPT = """
     {content}
     </conversation>
 """.trimIndent()
+
+/**
+ * 「总结窗口」默认提示词。可用变量：{content}、{locale}。
+ *
+ * 这里只给一个最小可用的默认值，方便直接试跑；设置页里可以整段替换成自己的提示词。
+ * 若提示词中不含 {content}，会话内容会自动追加到末尾，所以留空也不会把对话丢掉。
+ */
+internal val DEFAULT_SUMMARY_PROMPT = """
+    Summarize the following conversation window into a single long-term memory entry.
+
+    Requirements:
+    1. Keep only durable, reusable facts about the user and the decisions reached
+    2. Drop small talk, pleasantries, and anything already obvious from context
+    3. Write it as a compact third-person note, not a dialogue transcript
+    4. Output the note directly, with no preamble or meta-commentary
+    5. Use {locale} language
+
+    <conversation>
+    {content}
+    </conversation>
+""".trimIndent()

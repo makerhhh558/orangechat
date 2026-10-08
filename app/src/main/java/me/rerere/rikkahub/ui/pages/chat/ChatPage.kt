@@ -395,6 +395,12 @@ private fun ChatPageContent(
                     onCompressContext = { additionalPrompt, targetTokens, keepRecentMessages ->
                         vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
                     },
+                    onSummarizeWindow = { onResult ->
+                        vm.handleSummarizeWindow(onResult)
+                    },
+                    onSaveWindowSummary = { content, onSaved ->
+                        vm.saveWindowSummary(content, onSaved)
+                    },
                 )
             },
             containerColor = Color.Transparent,

@@ -53,6 +53,7 @@ import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Package01
+import me.rerere.hugeicons.stroke.StickyNote01
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -79,11 +80,15 @@ internal fun FilesPicker(
     state: ChatInputState,
     mcpManager: McpManager,
     onCompressContext: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job,
+    onSummarizeWindow: (onResult: (String) -> Unit) -> Job,
+    onSaveWindowSummary: (content: String, onSaved: () -> Unit) -> Job,
     onUpdateAssistant: (Assistant) -> Unit,
     showInjectionSheet: Boolean,
     onShowInjectionSheetChange: (Boolean) -> Unit,
     showCompressDialog: Boolean,
     onShowCompressDialogChange: (Boolean) -> Unit,
+    showSummaryDialog: Boolean,
+    onShowSummaryDialogChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onTakePic: () -> Unit,
     onPickImage: () -> Unit,
@@ -189,6 +194,33 @@ internal fun FilesPicker(
                     onShowCompressDialogChange(true)
                 },
         )
+
+        // Summarize Window Button
+        ListItem(
+            leadingContent = {
+                Icon(
+                    imageVector = HugeIcons.StickyNote01,
+                    contentDescription = stringResource(R.string.chat_page_summarize_window),
+                )
+            },
+            headlineContent = {
+                Text(stringResource(R.string.chat_page_summarize_window))
+            },
+            trailingContent = {
+                if (conversation.messageNodes.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.chat_page_message_count, conversation.messageNodes.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.large)
+                .clickable {
+                    onShowSummaryDialogChange(true)
+                },
+        )
     }
 
     // Injection Bottom Sheet
@@ -208,6 +240,18 @@ internal fun FilesPicker(
         }, onConfirm = { additionalPrompt, targetTokens, keepRecentMessages ->
             onCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
         })
+    }
+
+    // Window Summary Dialog
+    if (showSummaryDialog) {
+        WindowSummaryDialog(
+            onDismiss = {
+                onShowSummaryDialogChange(false)
+                onDismiss()
+            },
+            onGenerate = onSummarizeWindow,
+            onSave = onSaveWindowSummary,
+        )
     }
 }
 
