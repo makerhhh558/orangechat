@@ -60,6 +60,8 @@ data class BubbleStyle(
     val radiusTopEnd: Float = 16f,
     val radiusBottomEnd: Float = 16f,
     val radiusBottomStart: Float = 16f,
+    /** true 表示上面四个圆角值是百分比（0~100），50 即为圆形 */
+    val radiusPercent: Boolean = false,
     val paddingHorizontal: Float = 8f,
     val paddingVertical: Float = 8f,
     /** null = 沿用主题色/用户在颜色设置里选的色 */
@@ -68,7 +70,10 @@ data class BubbleStyle(
     /** null = 不限制宽度 */
     val maxWidthPercent: Float? = null,
     val tailVisible: Boolean = false,
+    /** 尖钩伸出气泡的距离（dp），对应 css 的 tail-size / tail-width */
     val tailSize: Float = 7f,
+    /** 尖钩底边长度（dp），null = 按 tailSize 推算，对应 css 的 tail-height */
+    val tailHeight: Float? = null,
     val tailPosition: TailPosition = TailPosition.AUTO,
     val tailShape: TailShape = TailShape.TRIANGLE,
     /** 尖钩沿气泡边缘的偏移量（dp），从所在角起算 */
@@ -145,6 +150,7 @@ fun BubbleStyle.withUniformRadius(radius: Float): BubbleStyle = copy(
     radiusTopEnd = radius,
     radiusBottomEnd = radius,
     radiusBottomStart = radius,
+    radiusPercent = false,
 )
 
 /** 解析过程中的一条问题记录。 */
@@ -159,8 +165,9 @@ data class ChatThemeIssue(
 /**
  * CSS 解析结果。
  *
- * 即使 [errors] 非空，[spec] 也始终可用：解析器会跳过出错的声明并保留其余部分，
- * 完全无法解析时返回内置默认样式。
+ * 即使 [errors] 非空，[spec] 也始终可用。回退粒度固定为"只丢弃出错的那一条声明"：
+ * 值写错的声明被跳过，同一个块里其余声明照常生效；
+ * 只有在解析器自身抛出异常（文件损坏等彻底无法解析的情况）时才整体回退到内置默认样式。
  */
 data class ChatThemeParseResult(
     val spec: ChatThemeSpec,

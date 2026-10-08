@@ -123,6 +123,7 @@ import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.data.datastore.ChatFontFamily
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.Image
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.base64Encode
@@ -781,7 +782,7 @@ private fun BubbleSurface(
     )
     val borderColor = style.borderColor?.let { it.toComposeColor() }
     val widthModifier = style.maxWidthPercent
-        ?.let { Modifier.fillMaxWidth(it.coerceIn(0.1f, 1f)) }
+        ?.let { Modifier.maxWidthFraction(it.coerceIn(0.1f, 1f)) }
         ?: Modifier
 
     val hasImage = imagePath.isNotBlank() && java.io.File(imagePath).exists()
@@ -827,6 +828,27 @@ private fun BubbleSurface(
         ) {
             Column(modifier = Modifier.padding(contentPadding)) { content() }
         }
+    }
+}
+ 
+/**
+ * 把宽度上限收到父容器的 [fraction] 倍，但不强制占满。
+ *
+ * 不能用 `fillMaxWidth(fraction)`：那个会把宽度钉死在该比例上（既是上限也是下限），
+ * 短消息也会被撑满。这里只改约束的 maxWidth，minWidth 保持 0，
+ * 让内容自己决定实际宽度，超出上限才换行。
+ */
+private fun Modifier.maxWidthFraction(fraction: Float): Modifier = layout { measurable, constraints ->
+    val limit = if (constraints.hasBoundedWidth) {
+        (constraints.maxWidth * fraction).toInt().coerceAtLeast(1)
+    } else {
+        constraints.maxWidth
+    }
+    val placeable = measurable.measure(
+        constraints.copy(minWidth = 0, maxWidth = limit)
+    )
+    layout(placeable.width, placeable.height) {
+        placeable.placeRelative(0, 0)
     }
 }
  

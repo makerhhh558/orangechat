@@ -14,7 +14,9 @@ package me.rerere.rikkahub.data.theme
  * [ChatThemeParseResult.unknownProperties]，方便用户知道哪些写了不生效。
  *
  * 设计约束（对应需求）：
- * - 任何输入都不会抛异常；出错的声明被跳过，其余声明照常生效
+ * - 任何输入都不会抛异常
+ * - 回退粒度：只丢弃出错的那一条声明，同块内其余声明照常生效；
+ *   仅当解析器自身抛异常（文件损坏）时才整体回退 [ChatThemeSpec.BUILTIN]
  * - 所有问题都带行号，便于界面提示"哪一行有问题"
  *
  * 支持的选择器：
@@ -25,7 +27,8 @@ package me.rerere.rikkahub.data.theme
  * .avatar                两侧头像
  * .avatar.user           用户头像（亦可写 .user-avatar）
  * .avatar.assistant      助手头像（亦可写 .assistant-avatar）
- * .message-list          消息列表布局（亦可写 .chat）
+ * .message-list          消息列表布局（亦可写 .chat），消息间距属性名为 gap
+ *                        （别名 spacing / row-gap / margin / margin-bottom / message-spacing）
  * .voice                 语音气泡（亦可写 .voice-bubble）
  * ```
  */
@@ -46,8 +49,10 @@ object ChatThemeCssParser {
                 }
             }
         } catch (e: Throwable) {
-            // 兜底：任何意外都退回已解析到的部分，绝不让主题文件搞崩应用
-            ctx.error(0, "解析中断: ${e.message ?: e::class.simpleName}")
+            // 兜底：解析器自身出意外（文件损坏等）时整体回退内置默认样式，
+            // 避免留下一半新一半旧的错乱外观。值写错只丢弃那一条声明，不走这里。
+            spec = ChatThemeSpec.BUILTIN.copy(name = name)
+            ctx.error(0, "解析中断，已回退内置默认样式: ${e.message ?: e::class.simpleName}")
         }
         return ChatThemeParseResult(
             spec = spec,
@@ -67,7 +72,7 @@ object ChatThemeCssParser {
      * 注释被替换为等量换行以保持行号准确。
      */
     private fun tokenize(raw: String, ctx: ParseContext): List<Block> {
-        val css = stripComments(raw)
+        val css = stripComments(raw, ctx)
         val blocks = mutableListOf<Block>()
         var i = 0
         var line = 1
@@ -88,16 +93,25 @@ object ChatThemeCssParser {
                     selectorBuf.setLength(0)
                     val bodyStart = i + 1
                     var j = bodyStart
-                    var bodyEndLine = line
-                    // 不支持嵌套，遇到第一个 } 即闭合
-                    while (j < css.length && css[j] != '}') {
-                        if (css[j] == '\n') bodyEndLine++
-                        j++
+                    // 不支持嵌套：遇到 '}' 正常闭合；遇到下一个 '{' 说明本块漏写了 '}'
+                    while (j < css.length && css[j] != '}' && css[j] != '{') j++
+                    val hitNextBlock = j < css.length && css[j] == '{'
+                    // 漏写 '}' 时，把尾部那段文字还给下一个选择器，
+                    // 否则 ".bubble.assistant { background-color" 会被当成属性名
+                    val bodyEnd = if (hitNextBlock) {
+                        maxOf(
+                            css.lastIndexOf(';', j - 1) + 1,
+                            css.lastIndexOf('\n', j - 1) + 1,
+                            bodyStart,
+                        )
+                    } else {
+                        minOf(j, css.length)
                     }
-                    if (j >= css.length) {
-                        ctx.error(line, "缺少闭合的 \"}\"")
+                    if (hitNextBlock || j >= css.length) {
+                        val who = if (selectorText.isEmpty()) "该规则" else "\"$selectorText\""
+                        ctx.error(selectorLine, "$who 的块缺少闭合的 \"}\"")
                     }
-                    val body = css.substring(bodyStart, minOf(j, css.length))
+                    val body = css.substring(bodyStart, bodyEnd)
                     val declarations = parseDeclarations(body, line, ctx)
                     val selectors = selectorText.split(',')
                         .map { it.trim() }
@@ -107,8 +121,10 @@ object ChatThemeCssParser {
                     } else {
                         blocks += Block(selectors, declarations, selectorLine)
                     }
-                    line = bodyEndLine
-                    i = minOf(j + 1, css.length)
+                    // 回退到 bodyEnd 时，剩下的文字由主循环重新当作选择器累积
+                    val resumeAt = if (bodyEnd < j) bodyEnd else minOf(j + 1, css.length)
+                    line += css.substring(bodyStart, minOf(resumeAt, css.length)).count { it == '\n' }
+                    i = resumeAt
                     selectorLine = line
                 }
 
@@ -131,18 +147,24 @@ object ChatThemeCssParser {
         return blocks
     }
 
-    /** 把注释换成等量换行，保证后续行号不偏移 */
-    private fun stripComments(css: String): String {
+    /** 把注释换成等量换行，保证后续行号不偏移；注释没闭合时报错 */
+    private fun stripComments(css: String, ctx: ParseContext): String {
         if (!css.contains("/*")) return css
         val sb = StringBuilder(css.length)
         var i = 0
+        var line = 1
         while (i < css.length) {
             if (i + 1 < css.length && css[i] == '/' && css[i + 1] == '*') {
                 val end = css.indexOf("*/", i + 2)
+                if (end < 0) ctx.error(line, "注释 \"/*\" 缺少闭合的 \"*/\"")
                 val stop = if (end < 0) css.length else end + 2
-                for (k in i until stop) if (css[k] == '\n') sb.append('\n')
+                for (k in i until stop) if (css[k] == '\n') {
+                    sb.append('\n')
+                    line++
+                }
                 i = stop
             } else {
+                if (css[i] == '\n') line++
                 sb.append(css[i])
                 i++
             }
@@ -400,19 +422,36 @@ object ChatThemeCssParser {
     private val BORDER_STYLES = setOf("solid", "dashed", "dotted", "double", "groove", "ridge")
 
     /**
-     * border-radius 简写，遵循 CSS 的 1/2/3/4 值规则。
-     * 返回 左上/右上/右下/左下。
+     * 单个圆角值：支持 12dp 与 50%。返回 数值 to 是否为百分比。
+     * 百分比上限 50%，到 50% 即为全圆/胶囊。
      */
-    private fun radius(value: String): FloatArray? {
+    private fun radiusLength(value: String): Pair<Float, Boolean>? {
+        val v = value.trim().lowercase()
+        if (v.endsWith("%")) {
+            val f = v.dropLast(1).trim().toFloatOrNull() ?: return null
+            return if (f.isFinite() && f >= 0f) f.coerceAtMost(50f) to true else null
+        }
+        return length(v)?.let { it to false }
+    }
+
+    /**
+     * border-radius 简写，遵循 CSS 的 1/2/3/4 值规则。
+     * 返回 (左上/右上/右下/左下) to 是否为百分比；
+     * 混写 dp 与 % 时按百分比处理（单个气泡只能整体用一种单位）。
+     */
+    private fun radius(value: String): Pair<FloatArray, Boolean>? {
         val parts = value.trim().split(' ', '\t').map { it.trim() }.filter { it.isNotEmpty() }
-        val nums = parts.map { length(it) ?: return null }
-        return when (nums.size) {
+        val pairs = parts.map { radiusLength(it) ?: return null }
+        val percent = pairs.any { it.second }
+        val nums = pairs.map { it.first }
+        val arr = when (nums.size) {
             1 -> floatArrayOf(nums[0], nums[0], nums[0], nums[0])
             2 -> floatArrayOf(nums[0], nums[1], nums[0], nums[1])
             3 -> floatArrayOf(nums[0], nums[1], nums[2], nums[1])
             4 -> floatArrayOf(nums[0], nums[1], nums[2], nums[3])
-            else -> null
+            else -> return null
         }
+        return arr to percent
     }
 
     /**
@@ -469,28 +508,29 @@ object ChatThemeCssParser {
         report: Boolean,
     ): BubbleStyle = applyAll(initial, declarations, ctx, report) { s, d ->
         when (d.property) {
-            "border-radius" -> radius(d.value)?.let {
+            "border-radius" -> radius(d.value)?.let { (r, pct) ->
                 s.copy(
-                    radiusTopStart = it[0], radiusTopEnd = it[1],
-                    radiusBottomEnd = it[2], radiusBottomStart = it[3],
+                    radiusTopStart = r[0], radiusTopEnd = r[1],
+                    radiusBottomEnd = r[2], radiusBottomStart = r[3],
+                    radiusPercent = pct,
                 )
-            } ?: s.also { ctx.badValue(d, "1~4 个长度值") }
+            } ?: s.also { ctx.badValue(d, "1~4 个长度值或百分比") }
 
             "border-top-left-radius" ->
-                length(d.value)?.let { s.copy(radiusTopStart = it) }
-                    ?: s.also { ctx.badValue(d, "长度值") }
+                radiusLength(d.value)?.let { (v, pct) -> s.copy(radiusTopStart = v, radiusPercent = pct) }
+                    ?: s.also { ctx.badValue(d, "长度值或百分比") }
 
             "border-top-right-radius" ->
-                length(d.value)?.let { s.copy(radiusTopEnd = it) }
-                    ?: s.also { ctx.badValue(d, "长度值") }
+                radiusLength(d.value)?.let { (v, pct) -> s.copy(radiusTopEnd = v, radiusPercent = pct) }
+                    ?: s.also { ctx.badValue(d, "长度值或百分比") }
 
             "border-bottom-right-radius" ->
-                length(d.value)?.let { s.copy(radiusBottomEnd = it) }
-                    ?: s.also { ctx.badValue(d, "长度值") }
+                radiusLength(d.value)?.let { (v, pct) -> s.copy(radiusBottomEnd = v, radiusPercent = pct) }
+                    ?: s.also { ctx.badValue(d, "长度值或百分比") }
 
             "border-bottom-left-radius" ->
-                length(d.value)?.let { s.copy(radiusBottomStart = it) }
-                    ?: s.also { ctx.badValue(d, "长度值") }
+                radiusLength(d.value)?.let { (v, pct) -> s.copy(radiusBottomStart = v, radiusPercent = pct) }
+                    ?: s.also { ctx.badValue(d, "长度值或百分比") }
 
             "padding" -> padding(d.value)?.let {
                 s.copy(paddingVertical = it.first, paddingHorizontal = it.second)
@@ -532,11 +572,19 @@ object ChatThemeCssParser {
                 bool(d.value)?.let { s.copy(tailVisible = it) }
                     ?: s.also { ctx.badValue(d, "true 或 false") }
 
-            "tail-size" ->
+            "tail-size", "tail-width" ->
                 length(d.value)?.let { s.copy(tailVisible = it > 0f, tailSize = it) }
                     ?: s.also { ctx.badValue(d, "长度值") }
 
-            "tail-offset" ->
+            "tail-height", "tail-base" ->
+                length(d.value)?.let { s.copy(tailHeight = if (it > 0f) it else null) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "tail-color", "tail-background" ->
+                color(d.value)?.let { s.copy(backgroundColor = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "tail-offset", "tail-top", "tail-margin" ->
                 offset(d.value)?.let { s.copy(tailOffset = it) }
                     ?: s.also { ctx.badValue(d, "长度值") }
 
@@ -643,7 +691,8 @@ object ChatThemeCssParser {
         report: Boolean,
     ): MessageStyle = applyAll(initial, declarations, ctx, report) { s, d ->
         when (d.property) {
-            "gap", "spacing", "row-gap", "margin", "message-spacing" ->
+            "gap", "spacing", "row-gap", "margin", "message-spacing",
+            "margin-bottom", "margin-top", "margin-vertical", "bubble-spacing" ->
                 length(d.value)?.let { s.copy(spacing = it) }
                     ?: s.also { ctx.badValue(d, "长度值") }
 

@@ -261,16 +261,17 @@ class ChatThemeRepository(private val context: Context) {
 
 /* 消息列表整体布局 */
 .message-list {
-    gap: 12dp;            /* 相邻消息的间隔 */
+    gap: 12dp;            /* 相邻消息的间隔，别名 spacing / margin-bottom */
     padding: 16dp;        /* 列表左右内边距 */
 }
 
 /* 两侧气泡的公共样式 */
 .bubble {
-    border-radius: 18dp;
+    border-radius: 18dp;  /* 也支持百分比，50% 即为圆形/胶囊 */
     padding: 8dp 12dp;    /* 纵向 横向 */
-    max-width: 85%;
-    tail-size: 7dp;       /* 小尖钩大小，0 表示不要尖钩 */
+    max-width: 85%;       /* 气泡最大宽度，不写则不限制 */
+    tail-width: 7dp;      /* 尖钩伸出的距离，别名 tail-size，0 表示不要尖钩 */
+    tail-height: 14dp;    /* 尖钩底边长度，不写则按 tail-width 推算 */
     tail-position: auto;  /* auto 按消息方向自动贴边 */
     tail-shape: triangle; /* triangle | right-triangle */
     tail-offset: 14dp;    /* 尖钩沿边缘的偏移 */

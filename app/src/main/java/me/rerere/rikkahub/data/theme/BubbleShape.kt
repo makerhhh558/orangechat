@@ -37,7 +37,11 @@ data class BubbleWithTailShape(
     val topEnd: Dp,
     val bottomEnd: Dp,
     val bottomStart: Dp,
+    /** true 表示上面四个值是百分比（0~50），按短边计算 */
+    val radiusPercent: Boolean,
     val tailSize: Dp,
+    /** 尖钩底边长度，null = 按 [tailSize] 推算 */
+    val tailHeight: Dp?,
     val side: TailSide?,
     val anchor: TailAnchor,
     val tailOffset: Dp,
@@ -50,11 +54,15 @@ data class BubbleWithTailShape(
         density: Density,
     ): Outline {
         val rtl = layoutDirection == LayoutDirection.Rtl
+        // 百分比按短边折算成像素，50% 即为全圆/胶囊
+        val shortSide = minOf(size.width, size.height)
+        fun Dp.resolve(): Float =
+            if (radiusPercent) shortSide * (value / 100f) else with(density) { toPx() }
         // start/end 需按书写方向映射到左右
-        val tl = with(density) { (if (rtl) topEnd else topStart).toPx() }
-        val tr = with(density) { (if (rtl) topStart else topEnd).toPx() }
-        val br = with(density) { (if (rtl) bottomStart else bottomEnd).toPx() }
-        val bl = with(density) { (if (rtl) bottomEnd else bottomStart).toPx() }
+        val tl = (if (rtl) topEnd else topStart).resolve()
+        val tr = (if (rtl) topStart else topEnd).resolve()
+        val br = (if (rtl) bottomStart else bottomEnd).resolve()
+        val bl = (if (rtl) bottomEnd else bottomStart).resolve()
         val tail = with(density) { tailSize.toPx() }
 
         if (side == null || tail <= 0f || size.width <= 0f || size.height <= 0f) {
@@ -96,7 +104,9 @@ data class BubbleWithTailShape(
 
         val offset = with(density) { tailOffset.toPx() }
         // 尖钩底边的中心，夹在气泡高度内避免溢出
-        val halfBase = tail * if (tailShape == TailShape.TRIANGLE) 1f else 1.2f
+        val halfBase = tailHeight
+            ?.let { with(density) { it.toPx() } / 2f }
+            ?: (tail * if (tailShape == TailShape.TRIANGLE) 1f else 1.2f)
         val anchorY = when (anchor) {
             TailAnchor.TOP -> offset + halfBase
             TailAnchor.CENTER -> size.height / 2f
@@ -138,12 +148,21 @@ data class BubbleWithTailShape(
  */
 fun BubbleStyle.toShape(isUser: Boolean): Shape {
     if (!tailVisible || tailSize <= 0f || tailPosition == TailPosition.NONE) {
-        return RoundedCornerShape(
-            topStart = radiusTopStart.dp,
-            topEnd = radiusTopEnd.dp,
-            bottomEnd = radiusBottomEnd.dp,
-            bottomStart = radiusBottomStart.dp,
-        )
+        return if (radiusPercent) {
+            RoundedCornerShape(
+                topStartPercent = radiusTopStart.toInt(),
+                topEndPercent = radiusTopEnd.toInt(),
+                bottomEndPercent = radiusBottomEnd.toInt(),
+                bottomStartPercent = radiusBottomStart.toInt(),
+            )
+        } else {
+            RoundedCornerShape(
+                topStart = radiusTopStart.dp,
+                topEnd = radiusTopEnd.dp,
+                bottomEnd = radiusBottomEnd.dp,
+                bottomStart = radiusBottomStart.dp,
+            )
+        }
     }
     val side = tailPosition.side(isUser)
     return BubbleWithTailShape(
@@ -151,7 +170,9 @@ fun BubbleStyle.toShape(isUser: Boolean): Shape {
         topEnd = radiusTopEnd.dp,
         bottomEnd = radiusBottomEnd.dp,
         bottomStart = radiusBottomStart.dp,
+        radiusPercent = radiusPercent,
         tailSize = tailSize.dp,
+        tailHeight = tailHeight?.dp,
         side = side,
         anchor = tailPosition.anchor(),
         tailOffset = tailOffset.dp,
