@@ -21,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,40 +39,37 @@ import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
  * 打开即开始生成，生成中可取消；拿到结果后内容可编辑，可保存进记忆或重新生成。
  * 生成失败时（错误提示由 ViewModel 统一弹出）直接关闭，不会停在空白框里。
  */
+private enum class SummaryStage { Generating, Result }
+
 @Composable
 fun WindowSummaryDialog(
     onDismiss: () -> Unit,
-    onGenerate: (onResult: (String) -> Unit) -> Job,
-    onSave: (content: String, onSaved: () -> Unit) -> Job,
+    onGenerate: (onResult: (String) -> Unit, onError: () -> Unit) -> Job,
+    onSave: (content: String, onSaved: () -> Unit, onError: () -> Unit) -> Job,
 ) {
     var summary by remember { mutableStateOf("") }
-    var hasResult by remember { mutableStateOf(false) }
+    var stage by remember { mutableStateOf(SummaryStage.Generating) }
+    var generateTrigger by remember { mutableIntStateOf(0) }
     var generateJob by remember { mutableStateOf<Job?>(null) }
-    var saveJob by remember { mutableStateOf<Job?>(null) }
-    val isGenerating = generateJob?.isActive == true
-    val isSaving = saveJob?.isActive == true
+    var isSaving by remember { mutableStateOf(false) }
+    val isGenerating = stage == SummaryStage.Generating
     val busy = isGenerating || isSaving
 
-    fun startGenerate() {
+    // key 用自增计数器，不用 Job 对象：Job 被替换时不会把 effect 自己重启掉，避免循环发请求。
+    // 成功/失败都由回调显式驱动，不再靠 join() 猜结果。
+    LaunchedEffect(generateTrigger) {
         summary = ""
-        hasResult = false
-        generateJob = onGenerate { result ->
-            summary = result
-            hasResult = true
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        startGenerate()
-    }
-
-    LaunchedEffect(generateJob) {
-        val job = generateJob ?: return@LaunchedEffect
-        job.join()
-        // 失败或被取消时没有结果，关掉对话框
-        if (!hasResult) {
-            onDismiss()
-        }
+        stage = SummaryStage.Generating
+        generateJob = onGenerate(
+            { result ->
+                summary = result
+                stage = SummaryStage.Result
+            },
+            {
+                // 错误提示已由 ViewModel 弹出，这里只负责收起对话框
+                onDismiss()
+            },
+        )
     }
 
     AlertDialog(
@@ -123,6 +121,7 @@ fun WindowSummaryDialog(
             if (isGenerating) {
                 TextButton(onClick = {
                     generateJob?.cancel()
+                    onDismiss()
                 }) {
                     Text(stringResource(R.string.cancel))
                 }
@@ -132,14 +131,19 @@ fun WindowSummaryDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextButton(
-                        onClick = { startGenerate() },
+                        onClick = { generateTrigger++ },
                         enabled = !isSaving
                     ) {
                         Text(stringResource(R.string.chat_page_summarize_window_regenerate))
                     }
                     TextButton(
                         onClick = {
-                            saveJob = onSave(summary) { onDismiss() }
+                            isSaving = true
+                            onSave(
+                                summary,
+                                { onDismiss() },
+                                { isSaving = false },
+                            )
                         },
                         enabled = !isSaving && summary.isNotBlank()
                     ) {

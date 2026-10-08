@@ -179,8 +179,19 @@ private fun DefaultTranslationModelSetting(
     )
 
     if (showModal) {
+        // 输入框用本地 state，避免每敲一个字就写一次 DataStore、再被 Flow 推回来重组，
+        // 那样会出现光标乱跳 / 字符回弹。关闭面板时才落库。
+        var promptDraft by remember { mutableStateOf(settings.translatePrompt) }
+
+        fun commitPrompt() {
+            if (promptDraft != settings.translatePrompt) {
+                vm.updateSettings(settings.copy(translatePrompt = promptDraft))
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = {
+                commitPrompt()
                 showModal = false
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -213,19 +224,14 @@ private fun DefaultTranslationModelSetting(
                     }
                 ) {
                     OutlinedTextField(
-                        value = settings.translatePrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    translatePrompt = it
-                                )
-                            )
-                        },
+                        value = promptDraft,
+                        onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
                     )
                     TextButton(
                         onClick = {
+                            promptDraft = DEFAULT_TRANSLATION_PROMPT
                             vm.updateSettings(
                                 settings.copy(
                                     translatePrompt = DEFAULT_TRANSLATION_PROMPT
@@ -289,8 +295,18 @@ private fun DefaultSuggestionModelSetting(
     )
 
     if (showModal) {
+        // 输入框用本地 state，避免每敲一个字就写一次 DataStore、再被 Flow 推回来重组。
+        var promptDraft by remember { mutableStateOf(settings.suggestionPrompt) }
+
+        fun commitPrompt() {
+            if (promptDraft != settings.suggestionPrompt) {
+                vm.updateSettings(settings.copy(suggestionPrompt = promptDraft))
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = {
+                commitPrompt()
                 showModal = false
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -310,19 +326,14 @@ private fun DefaultSuggestionModelSetting(
                     }
                 ) {
                     OutlinedTextField(
-                        value = settings.suggestionPrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    suggestionPrompt = it
-                                )
-                            )
-                        },
+                        value = promptDraft,
+                        onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8
                     )
                     TextButton(
                         onClick = {
+                            promptDraft = DEFAULT_SUGGESTION_PROMPT
                             vm.updateSettings(
                                 settings.copy(
                                     suggestionPrompt = DEFAULT_SUGGESTION_PROMPT
@@ -383,8 +394,18 @@ private fun DefaultTitleModelSetting(
     )
 
     if (showModal) {
+        // 输入框用本地 state，避免每敲一个字就写一次 DataStore、再被 Flow 推回来重组。
+        var promptDraft by remember { mutableStateOf(settings.titlePrompt) }
+
+        fun commitPrompt() {
+            if (promptDraft != settings.titlePrompt) {
+                vm.updateSettings(settings.copy(titlePrompt = promptDraft))
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = {
+                commitPrompt()
                 showModal = false
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -404,19 +425,14 @@ private fun DefaultTitleModelSetting(
                     }
                 ) {
                     OutlinedTextField(
-                        value = settings.titlePrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    titlePrompt = it
-                                )
-                            )
-                        },
+                        value = promptDraft,
+                        onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8
                     )
                     TextButton(
                         onClick = {
+                            promptDraft = DEFAULT_TITLE_PROMPT
                             vm.updateSettings(
                                 settings.copy(
                                     titlePrompt = DEFAULT_TITLE_PROMPT
@@ -514,8 +530,18 @@ private fun DefaultOcrModelSetting(
     )
 
     if (showModal) {
+        // 输入框用本地 state，避免每敲一个字就写一次 DataStore、再被 Flow 推回来重组。
+        var promptDraft by remember { mutableStateOf(settings.ocrPrompt) }
+
+        fun commitPrompt() {
+            if (promptDraft != settings.ocrPrompt) {
+                vm.updateSettings(settings.copy(ocrPrompt = promptDraft))
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = {
+                commitPrompt()
                 showModal = false
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -535,19 +561,14 @@ private fun DefaultOcrModelSetting(
                     }
                 ) {
                     OutlinedTextField(
-                        value = settings.ocrPrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    ocrPrompt = it
-                                )
-                            )
-                        },
+                        value = promptDraft,
+                        onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
                     )
                     TextButton(
                         onClick = {
+                            promptDraft = DEFAULT_OCR_PROMPT
                             vm.updateSettings(
                                 settings.copy(
                                     ocrPrompt = DEFAULT_OCR_PROMPT
@@ -610,8 +631,18 @@ private fun DefaultCompressModelSetting(
     )
 
     if (showModal) {
+        // 输入框用本地 state，避免每敲一个字就写一次 DataStore、再被 Flow 推回来重组。
+        var promptDraft by remember { mutableStateOf(settings.compressPrompt) }
+
+        fun commitPrompt() {
+            if (promptDraft != settings.compressPrompt) {
+                vm.updateSettings(settings.copy(compressPrompt = promptDraft))
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = {
+                commitPrompt()
                 showModal = false
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -631,19 +662,14 @@ private fun DefaultCompressModelSetting(
                     }
                 ) {
                     OutlinedTextField(
-                        value = settings.compressPrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    compressPrompt = it
-                                )
-                            )
-                        },
+                        value = promptDraft,
+                        onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
                     )
                     TextButton(
                         onClick = {
+                            promptDraft = DEFAULT_COMPRESS_PROMPT
                             vm.updateSettings(
                                 settings.copy(
                                     compressPrompt = DEFAULT_COMPRESS_PROMPT
@@ -706,8 +732,19 @@ private fun DefaultSummaryModelSetting(
     )
 
     if (showModal) {
+        // 输入框用本地 state，避免每敲一个字就往 DataStore 写一次、再被 Flow 推回来重组，
+        // 那样会出现光标乱跳 / 字符回弹。关闭面板时才落库。
+        var promptDraft by remember { mutableStateOf(settings.summaryPrompt) }
+
+        fun commitPrompt() {
+            if (promptDraft != settings.summaryPrompt) {
+                vm.updateSettings(settings.copy(summaryPrompt = promptDraft))
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = {
+                commitPrompt()
                 showModal = false
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -727,19 +764,14 @@ private fun DefaultSummaryModelSetting(
                     }
                 ) {
                     OutlinedTextField(
-                        value = settings.summaryPrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    summaryPrompt = it
-                                )
-                            )
-                        },
+                        value = promptDraft,
+                        onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
                     )
                     TextButton(
                         onClick = {
+                            promptDraft = DEFAULT_SUMMARY_PROMPT
                             vm.updateSettings(
                                 settings.copy(
                                     summaryPrompt = DEFAULT_SUMMARY_PROMPT

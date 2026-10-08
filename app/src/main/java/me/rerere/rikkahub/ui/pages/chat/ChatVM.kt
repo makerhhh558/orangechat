@@ -206,13 +206,16 @@ class ChatVM(
 
     /**
      * 总结当前窗口，结果通过 [onResult] 回调给 UI 预览，不直接写入记忆。
+     *
+     * 成功与失败都显式回调，UI 不需要靠 join() 去猜结果，避免竞态。
      */
-    fun handleSummarizeWindow(onResult: (String) -> Unit): Job {
+    fun handleSummarizeWindow(onResult: (String) -> Unit, onError: () -> Unit): Job {
         return viewModelScope.launch {
             chatService.summarizeWindow(conversation.value)
                 .onSuccess { onResult(it) }
                 .onFailure {
                     chatService.addError(it, title = context.getString(R.string.error_title_summarize_window))
+                    onError()
                 }
         }
     }
@@ -220,12 +223,13 @@ class ChatVM(
     /**
      * 用户点保存后，把（可能已编辑的）总结写入当前助手的记忆列表。
      */
-    fun saveWindowSummary(content: String, onSaved: () -> Unit): Job {
+    fun saveWindowSummary(content: String, onSaved: () -> Unit, onError: () -> Unit): Job {
         return viewModelScope.launch {
             chatService.saveWindowSummary(conversation.value, content)
                 .onSuccess { onSaved() }
                 .onFailure {
                     chatService.addError(it, title = context.getString(R.string.error_title_summarize_window))
+                    onError()
                 }
         }
     }

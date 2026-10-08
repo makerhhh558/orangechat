@@ -395,11 +395,11 @@ private fun ChatPageContent(
                     onCompressContext = { additionalPrompt, targetTokens, keepRecentMessages ->
                         vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
                     },
-                    onSummarizeWindow = { onResult ->
-                        vm.handleSummarizeWindow(onResult)
+                    onSummarizeWindow = { onResult, onError ->
+                        vm.handleSummarizeWindow(onResult, onError)
                     },
-                    onSaveWindowSummary = { content, onSaved ->
-                        vm.saveWindowSummary(content, onSaved)
+                    onSaveWindowSummary = { content, onSaved, onError ->
+                        vm.saveWindowSummary(content, onSaved, onError)
                     },
                 )
             },
