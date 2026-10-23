@@ -49,3 +49,30 @@ val LocalCurrentChatModel = compositionLocalOf<Model?> {
  * 没有提供时退回内置默认样式，保证任何预览/独立 Composable 都能正常渲染。
  */
 val LocalChatThemeSpec = compositionLocalOf { ChatThemeSpec.BUILTIN }
+
+/**
+ * 气泡正文里 Markdown 需要的主题覆盖项。
+ *
+ * 字号、字重、行高这些能靠 [androidx.compose.ui.text.TextStyle] 继承传下去，
+ * 但标题字号、代码块字号、链接色、行内代码底色在 Markdown 内部是硬编码的，
+ * 没法通过 TextStyle 传递，只能另开一个 CompositionLocal。
+ *
+ * 默认值全为 null，即"CSS 没设置"——此时 Markdown 完全保持原有硬编码行为，
+ * 不启用 CSS 主题的场景一行都不受影响。
+ */
+val LocalChatThemeText = compositionLocalOf { ChatThemeTextOverrides.NONE }
+
+/**
+ * @param fontScale 标题/代码块字号的缩放倍数，null = CSS 未设置 font-size，保持硬编码字号
+ * @param linkColor 正文链接颜色，null = 用 primary
+ * @param codeBackground 行内代码与代码块底色，null = 用主题默认
+ */
+data class ChatThemeTextOverrides(
+    val fontScale: Float? = null,
+    val linkColor: androidx.compose.ui.graphics.Color? = null,
+    val codeBackground: androidx.compose.ui.graphics.Color? = null,
+) {
+    companion object {
+        val NONE = ChatThemeTextOverrides()
+    }
+}

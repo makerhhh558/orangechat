@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
@@ -64,11 +65,19 @@ fun SettingDisplayChatThemePage() {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     val displaySetting = settings.displaySetting
-    var themes by remember { mutableStateOf<List<ChatThemeEntry>>(emptyList()) }
-    var refreshToken by remember { mutableStateOf(0) }
+    // 列表状态由仓库持有：导入要过系统文件选择器，页面作用域可能被取消，
+    // 放在页面里刷新会漏（文件已落盘但列表仍显示"还没有主题"）
+    val themes by repo.themes.collectAsStateWithLifecycle()
 
-    LaunchedEffect(refreshToken) {
-        themes = repo.listThemes()
+    LaunchedEffect(displaySetting.chatThemeEnabled) {
+        repo.refreshThemes()
+    }
+
+    // 兜底：回到页面必定重扫一次。用户可能用文件管理器直接增删了主题文件夹，
+    // 导入也要过系统文件选择器（期间本页会 onPause）。
+    LifecycleResumeEffect(Unit) {
+        scope.launch { repo.refreshThemes() }
+        onPauseOrDispose { }
     }
 
     fun updateDisplaySetting(block: (DisplaySetting) -> DisplaySetting) {
@@ -84,12 +93,35 @@ fun SettingDisplayChatThemePage() {
             val displayName = uri.lastPathSegment
             repo.importTheme(uri, displayName)
                 .onSuccess { name ->
-                    refreshToken++
                     toaster.show("已导入主题: $name")
                 }
                 .onFailure { e ->
                     toaster.show("导入失败: ${e.message ?: "未知错误"}")
                 }
+        }
+    }
+
+    // 批量导入：逐个走同一套导入逻辑，最后汇总结果，单个失败不影响其余
+    val importMultipleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            var success = 0
+            val failures = mutableListOf<String>()
+            uris.forEach { uri ->
+                repo.importTheme(uri, uri.lastPathSegment)
+                    .onSuccess { success++ }
+                    .onFailure { e -> failures.add(e.message ?: "未知错误") }
+            }
+            repo.refreshThemes()
+            toaster.show(
+                when {
+                    failures.isEmpty() -> "已导入 $success 个主题"
+                    success == 0 -> "导入失败: ${failures.first()}"
+                    else -> "成功 $success 个，失败 ${failures.size} 个: ${failures.first()}"
+                }
+            )
         }
     }
 
@@ -167,7 +199,6 @@ fun SettingDisplayChatThemePage() {
                                                 if (selected) {
                                                     updateDisplaySetting { it.copy(chatThemeName = "") }
                                                 }
-                                                refreshToken++
                                                 toaster.show("已删除 ${entry.name}")
                                             } else {
                                                 toaster.show("删除失败")
@@ -200,11 +231,17 @@ fun SettingDisplayChatThemePage() {
                         ) { Text("导入主题") }
                         OutlinedButton(
                             onClick = {
+                                importMultipleLauncher.launch(
+                                    arrayOf("text/css", "application/zip", "application/octet-stream", "*/*")
+                                )
+                            }
+                        ) { Text("批量导入") }
+                        OutlinedButton(
+                            onClick = {
                                 scope.launch {
                                     repo.reload(
                                         if (displaySetting.chatThemeEnabled) displaySetting.chatThemeName else ""
                                     )
-                                    refreshToken++
                                     toaster.show("已重新加载")
                                 }
                             }
@@ -215,7 +252,6 @@ fun SettingDisplayChatThemePage() {
                             scope.launch {
                                 repo.createSampleTheme()
                                     .onSuccess { name ->
-                                        refreshToken++
                                         toaster.show("已生成示例主题: $name")
                                     }
                                     .onFailure { e ->

@@ -80,6 +80,8 @@ import kotlinx.coroutines.flow.mapLatest
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.ui.context.ChatThemeTextOverrides
+import me.rerere.rikkahub.ui.context.LocalChatThemeText
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.theme.JetbrainsMono
 import me.rerere.rikkahub.utils.toDp
@@ -258,6 +260,16 @@ private fun dumpAst(node: ASTNode, text: String, indent: String = "") {
     }
 }
 
+/**
+ * 按 [scale] 缩放标题/代码块的硬编码字号。
+ *
+ * [scale] 为 null 表示 CSS 主题没设置 font-size，此时原样返回，
+ * 保证不启用主题的场景字号完全不变。
+ */
+fun TextStyle.scaleFontSize(scale: Float?): TextStyle =
+    if (scale == null || fontSize == TextUnit.Unspecified) this
+    else copy(fontSize = fontSize * scale)
+
 object HeaderStyle {
     val H1 = TextStyle(
         fontStyle = FontStyle.Normal, fontWeight = FontWeight.Bold, fontSize = 24.sp
@@ -311,7 +323,7 @@ private fun MarkdownNode(
 
         // 标题
         MarkdownElementTypes.ATX_1, MarkdownElementTypes.ATX_2, MarkdownElementTypes.ATX_3, MarkdownElementTypes.ATX_4, MarkdownElementTypes.ATX_5, MarkdownElementTypes.ATX_6 -> {
-            val style = when (node.type) {
+            val baseHeaderStyle = when (node.type) {
                 MarkdownElementTypes.ATX_1 -> HeaderStyle.H1
                 MarkdownElementTypes.ATX_2 -> HeaderStyle.H2
                 MarkdownElementTypes.ATX_3 -> HeaderStyle.H3
@@ -320,6 +332,10 @@ private fun MarkdownNode(
                 MarkdownElementTypes.ATX_6 -> HeaderStyle.H6
                 else -> throw IllegalArgumentException("Unknown header type")
             }
+            // CSS 主题设了 font-size 时标题按同一倍数跟随，没设则保持原有硬编码字号。
+            // 字体族从 LocalTextStyle 继承，字号/字重用标题自己的。
+            val themeText = LocalChatThemeText.current
+            val style = LocalTextStyle.current.merge(baseHeaderStyle.scaleFontSize(themeText.fontScale))
             val headingPadding = when (node.type) {
                 MarkdownElementTypes.ATX_1 -> 16.dp
                 MarkdownElementTypes.ATX_2 -> 14.dp
@@ -395,6 +411,7 @@ private fun MarkdownNode(
         // 引用块
         MarkdownElementTypes.BLOCK_QUOTE -> {
             ProvideTextStyle(LocalTextStyle.current.copy(fontStyle = FontStyle.Italic)) {
+                // 引用块只加斜体，字号/字体/行高都从正文继承
                 val borderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                 val bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
                 Column(
@@ -428,7 +445,7 @@ private fun MarkdownNode(
             val context = LocalContext.current
             Text(
                 text = linkText,
-                color = MaterialTheme.colorScheme.primary,
+                color = LocalChatThemeText.current.linkColor ?: MaterialTheme.colorScheme.primary,
                 textDecoration = TextDecoration.Underline,
                 modifier = modifier.clickable {
                     val intent = Intent(Intent.ACTION_VIEW, linkDest.toUri())
@@ -438,7 +455,8 @@ private fun MarkdownNode(
 
         // 加粗和斜体
         MarkdownElementTypes.EMPH -> {
-            ProvideTextStyle(TextStyle(fontStyle = FontStyle.Italic)) {
+            // 用 copy 而不是新建 TextStyle：否则会把继承来的字号/字体/行高一起丢掉
+            ProvideTextStyle(LocalTextStyle.current.copy(fontStyle = FontStyle.Italic)) {
                 node.children.fastForEach { child ->
                     MarkdownNode(
                         node = child, content = content, modifier = modifier, onClickCitation = onClickCitation
@@ -448,7 +466,7 @@ private fun MarkdownNode(
         }
 
         MarkdownElementTypes.STRONG -> {
-            ProvideTextStyle(TextStyle(fontWeight = FontWeight.SemiBold)) {
+            ProvideTextStyle(LocalTextStyle.current.copy(fontWeight = FontWeight.SemiBold)) {
                 node.children.fastForEach { child ->
                     MarkdownNode(
                         node = child, content = content, modifier = modifier, onClickCitation = onClickCitation
@@ -749,13 +767,15 @@ private fun Paragraph(
 
     val textStyle = LocalTextStyle.current
     val density = LocalDensity.current
+    val themeText = LocalChatThemeText.current
     FlowRow(
         modifier = modifier.then(
             if (node.nextSibling() != null) Modifier.padding(bottom = LocalTextStyle.current.fontSize.toDp())
             else Modifier
         )
     ) {
-        val annotatedString = remember(content, enableLatexRendering) {
+        // themeText 必须进 key：换主题后链接色、行内代码底色要跟着重建
+        val annotatedString = remember(content, enableLatexRendering, themeText) {
             buildAnnotatedString {
                 node.children.fastForEach { child ->
                     appendMarkdownNodeContent(
@@ -768,6 +788,7 @@ private fun Paragraph(
                         density = density,
                         trim = trim,
                         enableLatexRendering = enableLatexRendering,
+                        themeText = themeText,
                     )
                 }
             }
@@ -846,6 +867,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
     density: Density,
     style: TextStyle,
     enableLatexRendering: Boolean = true,
+    themeText: ChatThemeTextOverrides = ChatThemeTextOverrides.NONE,
     onClickCitation: (String) -> Unit = {},
 ) {
     when {
@@ -884,6 +906,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         density = density,
                         style = style,
                         enableLatexRendering = enableLatexRendering,
+                        themeText = themeText,
                         onClickCitation = onClickCitation
                     )
                 }
@@ -901,6 +924,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         density = density,
                         style = style,
                         enableLatexRendering = enableLatexRendering,
+                        themeText = themeText,
                         onClickCitation = onClickCitation
                     )
                 }
@@ -918,6 +942,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         density = density,
                         style = style,
                         enableLatexRendering = enableLatexRendering,
+                        themeText = themeText,
                         onClickCitation = onClickCitation
                     )
                 }
@@ -970,7 +995,8 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                 withLink(LinkAnnotation.Url(linkDest)) {
                     withStyle(
                         SpanStyle(
-                            color = colorScheme.primary, textDecoration = TextDecoration.Underline
+                            color = themeText.linkColor ?: colorScheme.primary,
+                            textDecoration = TextDecoration.Underline
                         )
                     ) {
                         append(linkText)
@@ -995,8 +1021,9 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
             withStyle(
                 SpanStyle(
                     fontFamily = FontFamily.Monospace,
+                    // 0.95em 是相对单位，会自动跟随正文字号
                     fontSize = 0.95.em,
-                    background = colorScheme.surfaceVariant,
+                    background = themeText.codeBackground ?: colorScheme.surfaceVariant,
                     color = colorScheme.primary,
                 )
             ) {
@@ -1052,6 +1079,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     density = density,
                     style = style,
                     enableLatexRendering = enableLatexRendering,
+                    themeText = themeText,
                     onClickCitation = onClickCitation
                 )
             }

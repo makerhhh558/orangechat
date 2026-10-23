@@ -189,7 +189,10 @@ object ChatThemeCssParser {
                 continue
             }
             val property = text.substring(0, colon).trim().lowercase()
-            val value = text.substring(colon + 1).trim().removeSuffix("!important").trim()
+            // 网页主题几乎每条都带 !important，中间允许空格，大小写不敏感
+            val value = text.substring(colon + 1).trim()
+                .replace(Regex("\\s*!\\s*important\\s*$", RegexOption.IGNORE_CASE), "")
+                .trim()
             if (property.isEmpty()) {
                 ctx.error(declLine, "缺少属性名")
                 continue
@@ -225,7 +228,8 @@ object ChatThemeCssParser {
     // region 选择器
 
     private enum class Target {
-        USER_BUBBLE, ASSISTANT_BUBBLE, USER_AVATAR, ASSISTANT_AVATAR, MESSAGE, VOICE
+        USER_BUBBLE, ASSISTANT_BUBBLE, USER_AVATAR, ASSISTANT_AVATAR, MESSAGE,
+        USER_VOICE, ASSISTANT_VOICE,
     }
 
     /** 把类选择器映射到作用目标；无法识别时返回空列表 */
@@ -247,6 +251,8 @@ object ChatThemeCssParser {
                 "user-avatar", "avatar-user" -> canonical += listOf("avatar", "user")
                 "assistant-avatar", "avatar-assistant" -> canonical += listOf("avatar", "assistant")
                 "message-list", "messages", "chat", "chat-list" -> canonical += "message-list"
+                "user-voice", "voice-user" -> canonical += listOf("voice", "user")
+                "assistant-voice", "voice-assistant" -> canonical += listOf("voice", "assistant")
                 "voice", "voice-bubble", "audio", "audio-bubble" -> canonical += "voice"
                 else -> return emptyList()
             }
@@ -255,7 +261,11 @@ object ChatThemeCssParser {
         val assistant = "assistant" in canonical
         return when {
             "message-list" in canonical -> listOf(Target.MESSAGE)
-            "voice" in canonical -> listOf(Target.VOICE)
+            "voice" in canonical -> when {
+                user && !assistant -> listOf(Target.USER_VOICE)
+                assistant && !user -> listOf(Target.ASSISTANT_VOICE)
+                else -> listOf(Target.USER_VOICE, Target.ASSISTANT_VOICE)
+            }
             "bubble" in canonical -> when {
                 user && !assistant -> listOf(Target.USER_BUBBLE)
                 assistant && !user -> listOf(Target.ASSISTANT_BUBBLE)
@@ -298,8 +308,11 @@ object ChatThemeCssParser {
                 Target.MESSAGE ->
                     out.copy(message = applyMessage(out.message, declarations, ctx, report))
 
-                Target.VOICE ->
-                    out.copy(voice = applyVoice(out.voice, declarations, ctx, report))
+                Target.USER_VOICE ->
+                    out.copy(userVoice = applyVoice(out.userVoice, declarations, ctx, report))
+
+                Target.ASSISTANT_VOICE ->
+                    out.copy(assistantVoice = applyVoice(out.assistantVoice, declarations, ctx, report))
             }
         }
         return out
@@ -331,6 +344,17 @@ object ChatThemeCssParser {
             v.toFloatOrNull()
         } ?: return null
         return if (f.isFinite() && f > 0f && f <= 1f) f else null
+    }
+
+    /**
+     * 允许超过 100% 的百分比（头像挂件可以比头像大），只要求为正数。
+     * 返回小数（140% → 1.4）。不接受裸小数，避免和长度写法混淆。
+     */
+    private fun positivePercent(value: String): Float? {
+        val v = value.trim()
+        if (!v.endsWith("%")) return null
+        val f = v.dropLast(1).trim().toFloatOrNull()?.div(100f) ?: return null
+        return if (f.isFinite() && f > 0f) f else null
     }
 
     private fun bool(value: String): Boolean? = when (value.trim().lowercase()) {
@@ -421,6 +445,20 @@ object ChatThemeCssParser {
 
     private val BORDER_STYLES = setOf("solid", "dashed", "dotted", "double", "groove", "ridge")
 
+    /** font-family 的通用族别名，值为 Compose 侧识别用的规范名 */
+    private val GENERIC_FONTS = mapOf(
+        "serif" to "serif",
+        "sans-serif" to "sans-serif",
+        "sans" to "sans-serif",
+        "sansserif" to "sans-serif",
+        "monospace" to "monospace",
+        "mono" to "monospace",
+        "cursive" to "cursive",
+        "default" to "default",
+        "inherit" to "default",
+        "initial" to "default",
+    )
+
     /**
      * 单个圆角值：支持 12dp 与 50%。返回 数值 to 是否为百分比。
      * 百分比上限 50%，到 50% 即为全圆/胶囊。
@@ -456,7 +494,8 @@ object ChatThemeCssParser {
 
     /**
      * padding 简写。返回 纵向 to 横向。
-     * 四值写法取 上/右（上下、左右不支持分开设定，故取其一）。
+     * 三值、四值写法取第一个当纵向、第二个当横向，其余忽略
+     * （上下、左右不支持分开设定）。
      */
     private fun padding(value: String): Pair<Float, Float>? {
         val parts = value.trim().split(' ', '\t').map { it.trim() }.filter { it.isNotEmpty() }
@@ -466,6 +505,357 @@ object ChatThemeCssParser {
             2, 3, 4 -> nums[0] to nums[1]
             else -> null
         }
+    }
+
+    /**
+     * box-shadow 简写：`<offset-x> <offset-y> [blur] [spread] <color>`。
+     *
+     * 返回 null 表示值非法（`none` 由调用方提前处理）。
+     * 多重阴影（逗号分隔）只取第一个，与 CSS 的「第一个在最上层」一致。
+     * 颜色可出现在任意位置（CSS 允许写在最前面），缺省时用默认半透明黑。
+     */
+    private fun boxShadow(value: String): BubbleShadow? {
+        val first = splitTopLevel(value, ',').firstOrNull()?.trim() ?: return null
+        if (first.isEmpty()) return null
+
+        val nums = mutableListOf<Float>()
+        var c: Long? = null
+        // 用 splitTopLevel 而不是 split(' ')：rgba(255, 182, 193, 0.1) 内部有空格，
+        // 必须跳过括号内的分隔符才不会把颜色函数拆散
+        val tokens = splitTopLevel(first.replace('\t', ' '), ' ')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        for (token in tokens) {
+            if (token in BORDER_STYLES || token == "inset") return null
+            val n = offset(token)
+            if (n != null && nums.size < 4) {
+                nums += n
+                continue
+            }
+            val parsed = color(token)
+            if (parsed != null && c == null) {
+                c = parsed
+                continue
+            }
+            return null
+        }
+        if (nums.size < 2) return null
+        return BubbleShadow(
+            offsetX = nums[0],
+            offsetY = nums[1],
+            blur = nums.getOrNull(2)?.coerceAtLeast(0f) ?: 0f,
+            spread = nums.getOrNull(3) ?: 0f,
+            color = c ?: 0x40000000L,
+        )
+    }
+
+    /**
+     * 字号类长度：`16`、`16sp`、`16dp`、`16px`。
+     *
+     * 不写单位按 sp 处理（跟随系统字体缩放，符合移动端直觉）。
+     * [allowNegative] 供 letter-spacing 用，字号本身必须为正。
+     */
+    private fun textUnit(value: String, allowNegative: Boolean = false): CssTextUnit? {
+        val v = value.trim().lowercase()
+        val isSp: Boolean
+        val num = when {
+            v.endsWith("sp") -> {
+                isSp = true
+                v.removeSuffix("sp")
+            }
+
+            v.endsWith("dp") -> {
+                isSp = false
+                v.removeSuffix("dp")
+            }
+
+            v.endsWith("px") -> {
+                isSp = false
+                v.removeSuffix("px")
+            }
+
+            else -> {
+                isSp = true
+                v
+            }
+        }.trim()
+        val f = num.toFloatOrNull()?.takeIf { it.isFinite() } ?: return null
+        if (!allowNegative && f <= 0f) return null
+        return CssTextUnit(value = f, isSp = isSp)
+    }
+
+    /** font-weight：normal / bold / lighter / bolder / 100~900（取整到百位） */
+    private fun fontWeight(value: String): Int? {
+        val v = value.trim().lowercase()
+        when (v) {
+            "normal", "regular" -> return 400
+            "bold" -> return 700
+            "lighter", "light", "thin" -> return 300
+            "bolder", "black", "heavy" -> return 900
+            "medium" -> return 500
+            "semibold", "semi-bold", "demibold" -> return 600
+        }
+        val n = v.toIntOrNull() ?: return null
+        if (n < 100 || n > 900) return null
+        // Compose 的 FontWeight 以百为档，四舍五入到最近一档
+        return ((n + 50) / 100) * 100
+    }
+
+    /**
+     * line-height：`1.5`（倍数）或 `24sp` / `24dp` / `24px`（长度）。
+     *
+     * 不带单位且不超过 4 时按倍数；超过 4 按 sp 长度处理。
+     * 网页主题里 `line-height: 24` 几乎都是想要 24px 行高，按 24 倍会把气泡撑爆。
+     */
+    private fun lineHeight(value: String): CssLineHeight? {
+        val v = value.trim().lowercase()
+        if (v == "normal") return null
+        val hasUnit = v.endsWith("sp") || v.endsWith("dp") || v.endsWith("px")
+        if (!hasUnit) {
+            val f = v.toFloatOrNull()?.takeIf { it.isFinite() && it > 0f } ?: return null
+            return if (f > 4f) {
+                CssLineHeight(value = f, isMultiplier = false, isSp = true)
+            } else {
+                CssLineHeight(value = f, isMultiplier = true)
+            }
+        }
+        val unit = textUnit(v) ?: return null
+        return CssLineHeight(value = unit.value, isMultiplier = false, isSp = unit.isSp)
+    }
+
+    /**
+     * 取出 `url("xxx")` / `url('xxx')` / `url(xxx)` 里的路径，也接受裸字符串。
+     * 返回 null 表示拿不到非空路径。
+     */
+    private fun url(value: String): String? {
+        var v = value.trim()
+        if (v.startsWith("url(", ignoreCase = true) && v.endsWith(")")) {
+            v = v.substring(4, v.length - 1).trim()
+        }
+        v = v.trim('"', '\'').trim()
+        return v.ifBlank { null }
+    }
+
+    /** 角度：10deg / -10deg / 10（无单位按度）。允许负值。 */
+    private fun angle(value: String): Float? {
+        val v = value.trim().lowercase().removeSuffix("deg").trim()
+        return v.toFloatOrNull()?.takeIf { it.isFinite() }
+    }
+
+    /** 0~1 的比例，也接受 60% 这种写法。与 [percent] 的区别是允许 0。 */
+    private fun alpha(value: String): Float? {
+        val v = value.trim()
+        val f = if (v.endsWith("%")) {
+            v.dropLast(1).trim().toFloatOrNull()?.div(100f)
+        } else {
+            v.toFloatOrNull()
+        } ?: return null
+        return if (f.isFinite() && f >= 0f && f <= 1f) f else null
+    }
+
+    /**
+     * `linear-gradient(<方向>, <颜色>, <颜色>...)`。
+     * 方向可省略（默认 180deg，即从上到下），也接受 `45deg`、`to right`、`to top right`。
+     * 颜色后面的停靠位置（如 `red 20%`）直接丢掉，颜色仍按均匀分布绘制。
+     */
+    private fun linearGradient(value: String): CssGradient? {
+        val v = value.trim()
+        val prefix = "linear-gradient("
+        if (!v.startsWith(prefix, ignoreCase = true) || !v.endsWith(")")) return null
+        val inner = v.substring(prefix.length, v.length - 1).trim()
+        val parts = splitTopLevel(inner, ',').map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return null
+
+        var angle = 180f
+        var corner: GradientCorner? = null
+        var start = 0
+        val first = parts[0].lowercase()
+        val looksLikeDirection = first.endsWith("deg") || first.toFloatOrNull() != null || first.startsWith("to ")
+        if (looksLikeDirection) {
+            val direction = parseGradientDirection(first) ?: return null
+            angle = direction.first
+            corner = direction.second
+            start = 1
+        }
+        val colors = mutableListOf<Long>()
+        for (i in start until parts.size) {
+            // 停靠位置（red 20%、#fff 0px）忽略，只取第一个颜色 token。
+            // splitTopLevel 会保住 rgba(...) 内部的空格。
+            val token = splitTopLevel(parts[i], ' ')
+                .map { it.trim() }
+                .firstOrNull { it.isNotEmpty() } ?: return null
+            colors += color(token) ?: return null
+        }
+        if (colors.size < 2) return null
+        return CssGradient(angleDeg = angle, colors = colors, toCorner = corner)
+    }
+
+    /** 渐变方向。返回角度 to 对角标志；无法识别时返回 null。 */
+    private fun parseGradientDirection(token: String): Pair<Float, GradientCorner?>? {
+        val t = token.trim().lowercase()
+        if (!t.startsWith("to ")) {
+            val a = angle(t) ?: return null
+            return a to null
+        }
+        val sides = t.removePrefix("to ").split(' ', '\t').filter { it.isNotEmpty() }
+        return when (sides) {
+            listOf("top") -> 0f to null
+            listOf("right") -> 90f to null
+            listOf("bottom") -> 180f to null
+            listOf("left") -> 270f to null
+            listOf("top", "right"), listOf("right", "top") -> 45f to GradientCorner.TOP_RIGHT
+            listOf("bottom", "right"), listOf("right", "bottom") -> 135f to GradientCorner.BOTTOM_RIGHT
+            listOf("bottom", "left"), listOf("left", "bottom") -> 225f to GradientCorner.BOTTOM_LEFT
+            listOf("top", "left"), listOf("left", "top") -> 315f to GradientCorner.TOP_LEFT
+            else -> null
+        }
+    }
+
+    /** border-image-slice：1~4 个非负像素，按 CSS 的上/右/下/左规则展开。 */
+    private fun borderImageSlice(value: String): List<Float>? {
+        val parts = value.trim().lowercase().split(' ', '\t').map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size !in 1..4) return null
+        val nums = parts.map { token ->
+            val n = token.removeSuffix("px").trim().toFloatOrNull() ?: return null
+            if (!n.isFinite() || n < 0f) return null
+            n
+        }
+        return expandBox(nums)
+    }
+
+    /** border-image-width：1~4 个长度（dp），同样按上/右/下/左展开。 */
+    private fun borderImageWidth(value: String): List<Float>? {
+        val parts = value.trim().split(' ', '\t').map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size !in 1..4) return null
+        return expandBox(parts.map { length(it) ?: return null })
+    }
+
+    private fun expandBox(nums: List<Float>): List<Float> = when (nums.size) {
+        1 -> listOf(nums[0], nums[0], nums[0], nums[0])
+        2 -> listOf(nums[0], nums[1], nums[0], nums[1])
+        3 -> listOf(nums[0], nums[1], nums[2], nums[1])
+        else -> listOf(nums[0], nums[1], nums[2], nums[3])
+    }
+
+    /**
+     * `border-image` 简写：`url(...) [slice] [fill] [/ width [/ outset]]`。
+     * `fill` 接受但忽略（中间区域本来就会铺满），outset 忽略。
+     * 简写里没写的 slice / width 保留已有值。
+     */
+    private fun borderImageShorthand(current: BorderImage, d: Decl, ctx: ParseContext): BorderImage {
+        val tokens = splitTopLevel(d.value, ' ').map { it.trim() }.filter { it.isNotEmpty() }
+        val source = tokens.firstOrNull()?.let { url(it) }
+        if (source == null) {
+            ctx.badValue(d, "url(...) [slice] [fill] [/ width] 或 none")
+            return current
+        }
+        val rest = tokens.drop(1).joinToString(" ")
+        val groups = splitTopLevel(rest, '/').map { it.trim() }
+        if (groups.size > 3) {
+            ctx.badValue(d, "url(...) [slice] [fill] [/ width] 或 none")
+            return current
+        }
+        var next = current.copy(source = source, disabled = false, sourceLine = d.line)
+        val sliceTokens = groups.getOrNull(0).orEmpty()
+            .split(' ', '\t')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.equals("fill", ignoreCase = true) }
+        if (sliceTokens.isNotEmpty()) {
+            val slice = borderImageSlice(sliceTokens.joinToString(" "))
+            if (slice == null) {
+                ctx.badValue(d, "url(...) [slice] [fill] [/ width] 或 none")
+                return current
+            }
+            next = next.copy(slice = slice)
+        }
+        val widthText = groups.getOrNull(1)?.trim().orEmpty()
+        if (widthText.isNotEmpty()) {
+            val width = borderImageWidth(widthText)
+            if (width == null) {
+                ctx.badValue(d, "url(...) [slice] [fill] [/ width] 或 none")
+                return current
+            }
+            next = next.copy(width = width)
+        }
+        return next
+    }
+
+    /** 把 border-image 三个属性应用到已有皮肤上。不是这三个属性时返回 null。 */
+    private fun applyBorderImage(current: BorderImage, d: Decl, ctx: ParseContext): BorderImage? =
+        when (d.property) {
+            "border-image" -> {
+                val v = d.value.trim()
+                if (v.equals("none", ignoreCase = true)) {
+                    current.copy(source = null, disabled = true, sourceLine = 0)
+                } else {
+                    borderImageShorthand(current, d, ctx)
+                }
+            }
+
+            "border-image-source" -> {
+                val v = d.value.trim()
+                if (v.equals("none", ignoreCase = true)) {
+                    current.copy(source = null, disabled = true, sourceLine = 0)
+                } else {
+                    url(d.value)?.let {
+                        current.copy(source = it, disabled = false, sourceLine = d.line)
+                    } ?: current.also { ctx.badValue(d, "url(...) 或 none") }
+                }
+            }
+
+            "border-image-slice" ->
+                borderImageSlice(d.value)?.let { current.copy(slice = it) }
+                    ?: current.also { ctx.badValue(d, "1~4 个非负像素，如 20 或 10 20 30 40") }
+
+            "border-image-width" ->
+                borderImageWidth(d.value)?.let { current.copy(width = it) }
+                    ?: current.also { ctx.badValue(d, "1~4 个长度，如 12dp") }
+
+            else -> null
+        }
+
+    /** 两个长度，形如 `4dp -6dp`；只给一个时两个方向相同。允许负值。 */
+    private fun offsetPair(value: String): Pair<Float, Float>? {
+        val parts = splitTopLevel(value, ' ').map { it.trim() }.filter { it.isNotEmpty() }
+        return when (parts.size) {
+            1 -> offset(parts[0])?.let { it to it }
+            2 -> {
+                val x = offset(parts[0]) ?: return null
+                val y = offset(parts[1]) ?: return null
+                x to y
+            }
+
+            else -> null
+        }
+    }
+
+    /** 贴纸所在角，别名规则与 tail-position 保持一致 */
+    private fun parseStickerCorner(value: String): StickerCorner? =
+        when (value.trim().lowercase().replace('_', '-')) {
+            "top-left", "left-top" -> StickerCorner.TOP_LEFT
+            "top-right", "right-top" -> StickerCorner.TOP_RIGHT
+            "bottom-left", "left-bottom" -> StickerCorner.BOTTOM_LEFT
+            "bottom-right", "right-bottom" -> StickerCorner.BOTTOM_RIGHT
+            else -> null
+        }
+
+    /**
+     * font-family：通用族名（serif / sans-serif / monospace）或 `url("xxx.ttf")`。
+     *
+     * 多个候选用逗号分隔时取第一个能识别的，与 css 的回退链语义一致。
+     */
+    private fun fontFamily(value: String): CssFontFamily? {
+        for (raw in splitTopLevel(value, ',')) {
+            val part = raw.trim()
+            if (part.isEmpty()) continue
+            val generic = GENERIC_FONTS[part.trim('"', '\'').lowercase()]
+            if (generic != null) return CssFontFamily.Generic(generic)
+            if (part.startsWith("url(", ignoreCase = true)) {
+                val path = url(part) ?: continue
+                return CssFontFamily.File(path)
+            }
+        }
+        return null
     }
 
     // endregion
@@ -544,8 +934,17 @@ object ChatThemeCssParser {
                 length(d.value)?.let { s.copy(paddingHorizontal = it) }
                     ?: s.also { ctx.badValue(d, "长度值") }
 
-            "background", "background-color" ->
-                color(d.value)?.let { s.copy(backgroundColor = it) }
+            "background" -> {
+                val gradient = linearGradient(d.value)
+                when {
+                    gradient != null -> s.copy(backgroundGradient = gradient, backgroundColor = null)
+                    else -> color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
+                        ?: s.also { ctx.badValue(d, "颜色值或 linear-gradient(...)") }
+                }
+            }
+
+            "background-color" ->
+                color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
                     ?: s.also { ctx.badValue(d, "颜色值") }
 
             "color", "text-color" ->
@@ -581,7 +980,7 @@ object ChatThemeCssParser {
                     ?: s.also { ctx.badValue(d, "长度值") }
 
             "tail-color", "tail-background" ->
-                color(d.value)?.let { s.copy(backgroundColor = it) }
+                color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
                     ?: s.also { ctx.badValue(d, "颜色值") }
 
             "tail-offset", "tail-top", "tail-margin" ->
@@ -598,6 +997,90 @@ object ChatThemeCssParser {
             "segment-spacing", "row-gap" ->
                 length(d.value)?.let { s.copy(segmentSpacing = it) }
                     ?: s.also { ctx.badValue(d, "长度值") }
+
+            "box-shadow", "shadow" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(shadow = null)
+                } else {
+                    boxShadow(d.value)?.let { s.copy(shadow = it) }
+                        ?: s.also { ctx.badValue(d, "如 0 2dp 6dp rgba(0,0,0,0.1) 或 none") }
+                }
+
+            "font-size" ->
+                textUnit(d.value)?.let { s.copy(fontSize = it) }
+                    ?: s.also { ctx.badValue(d, "正的长度值，如 16sp 或 16dp") }
+
+            "font-weight" ->
+                fontWeight(d.value)?.let { s.copy(fontWeight = it) }
+                    ?: s.also { ctx.badValue(d, "normal/bold 或 100~900") }
+
+            "line-height" ->
+                if (d.value.trim().equals("normal", ignoreCase = true)) {
+                    s.copy(lineHeight = null)
+                } else {
+                    lineHeight(d.value)?.let { s.copy(lineHeight = it) }
+                        ?: s.also { ctx.badValue(d, "倍数如 1.5，或长度如 24sp") }
+                }
+
+            "letter-spacing" ->
+                if (d.value.trim().equals("normal", ignoreCase = true)) {
+                    s.copy(letterSpacing = null)
+                } else {
+                    textUnit(d.value, allowNegative = true)?.let { s.copy(letterSpacing = it) }
+                        ?: s.also { ctx.badValue(d, "长度值，如 0.5sp 或 -0.5dp") }
+                }
+
+            "font-family", "font" ->
+                fontFamily(d.value)?.let { s.copy(fontFamily = it) }
+                    ?: s.also { ctx.badValue(d, "serif/sans-serif/monospace 或 url(\"xxx.ttf\")") }
+
+            "link-color" ->
+                color(d.value)?.let { s.copy(linkColor = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "code-background", "code-bg" ->
+                color(d.value)?.let { s.copy(codeBackground = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "sticker", "sticker-image" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(sticker = s.sticker.copy(source = null, sourceLine = 0))
+                } else {
+                    url(d.value)?.let {
+                        s.copy(sticker = s.sticker.copy(source = it, sourceLine = d.line))
+                    } ?: s.also { ctx.badValue(d, "url(\"cat.png\") 或 none") }
+                }
+
+            "sticker-size" ->
+                length(d.value)?.takeIf { it > 0f }?.let { s.copy(sticker = s.sticker.copy(size = it)) }
+                    ?: s.also { ctx.badValue(d, "正的长度值，如 24dp") }
+
+            "sticker-position", "sticker-corner" ->
+                parseStickerCorner(d.value)?.let { s.copy(sticker = s.sticker.copy(corner = it)) }
+                    ?: s.also { ctx.badValue(d, "top-left/top-right/bottom-left/bottom-right") }
+
+            "sticker-offset" -> offsetPair(d.value)?.let { (x, y) ->
+                s.copy(sticker = s.sticker.copy(offsetX = x, offsetY = y))
+            } ?: s.also { ctx.badValue(d, "一个或两个长度值，如 -6dp -4dp") }
+
+            "sticker-rotate" ->
+                angle(d.value)?.let { s.copy(sticker = s.sticker.copy(rotate = it)) }
+                    ?: s.also { ctx.badValue(d, "角度值，如 10deg 或 -10deg") }
+
+            "sticker-rotate-random" ->
+                angle(d.value)?.let { s.copy(sticker = s.sticker.copy(rotateRandom = kotlin.math.abs(it))) }
+                    ?: s.also { ctx.badValue(d, "角度值，如 8deg") }
+
+            "sticker-opacity" ->
+                alpha(d.value)?.let { s.copy(sticker = s.sticker.copy(opacity = it)) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            "opacity" ->
+                alpha(d.value)?.let { s.copy(backgroundOpacity = it) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            "border-image", "border-image-source", "border-image-slice", "border-image-width" ->
+                applyBorderImage(s.borderImage, d, ctx)?.let { s.copy(borderImage = it) }
 
             else -> null
         }
@@ -637,10 +1120,25 @@ object ChatThemeCssParser {
             "shape", "avatar-type" -> parseAvatarShape(d.value)?.let { s.copy(shape = it) }
                 ?: s.also { ctx.badValue(d, "circle/rounded/square") }
 
-            "border-radius" -> length(d.value)?.let {
-                // 写了圆角却没写 shape 时，自动按圆角形状渲染
-                s.copy(cornerRadius = it, shape = if (s.shape == AvatarShapeSpec.CIRCLE) AvatarShapeSpec.ROUNDED else s.shape)
-            } ?: s.also { ctx.badValue(d, "长度值") }
+            "border-radius" -> {
+                val v = d.value.trim()
+                val rounded = if (s.shape == AvatarShapeSpec.CIRCLE) AvatarShapeSpec.ROUNDED else s.shape
+                when {
+                    v.endsWith("%") -> {
+                        val p = v.dropLast(1).trim().toFloatOrNull()
+                        when {
+                            p == null || !p.isFinite() || p < 0f ->
+                                s.also { ctx.badValue(d, "长度或百分比") }
+                            // 50% 及以上就是正圆，和网页上 border-radius: 50% 的头像一致
+                            p >= 50f -> s.copy(shape = AvatarShapeSpec.CIRCLE, cornerRadiusPercent = null)
+                            else -> s.copy(shape = rounded, cornerRadiusPercent = p)
+                        }
+                    }
+                    else -> length(v)?.let {
+                        s.copy(cornerRadius = it, cornerRadiusPercent = null, shape = rounded)
+                    } ?: s.also { ctx.badValue(d, "长度或百分比") }
+                }
+            }
 
             "gap", "margin", "margin-right", "margin-left" ->
                 length(d.value)?.let { s.copy(gap = it) }
@@ -665,6 +1163,37 @@ object ChatThemeCssParser {
                 color(d.value)?.let { s.copy(borderColor = it) }
                     ?: s.also { ctx.badValue(d, "颜色值") }
 
+            "avatar-frame" -> {
+                val v = d.value.trim()
+                if (v.equals("none", ignoreCase = true)) {
+                    s.copy(frameSource = null, frameDisabled = true, frameSourceLine = 0)
+                } else {
+                    url(d.value)?.let {
+                        s.copy(frameSource = it, frameDisabled = false, frameSourceLine = d.line)
+                    } ?: s.also { ctx.badValue(d, "url(...) 或 none") }
+                }
+            }
+
+            "avatar-frame-size" -> {
+                val v = d.value.trim()
+                when {
+                    v.endsWith("%") -> positivePercent(v)?.let {
+                        s.copy(frameSizePercent = it, frameSizeDp = null)
+                    } ?: s.also { ctx.badValue(d, "正数百分比（如 140%）") }
+
+                    else -> length(v)?.let {
+                        s.copy(frameSizeDp = it, frameSizePercent = null)
+                    } ?: s.also { ctx.badValue(d, "长度或百分比") }
+                }
+            }
+
+            "avatar-frame-offset" -> offsetPair(d.value)?.let { (x, y) ->
+                s.copy(frameOffsetX = x, frameOffsetY = y)
+            } ?: s.also { ctx.badValue(d, "一或两个长度") }
+
+            "avatar-align", "align" -> parseAvatarAlign(d.value)?.let { s.copy(align = it) }
+                ?: s.also { ctx.badValue(d, "top、center 或 bottom") }
+
             else -> null
         }
     }
@@ -681,6 +1210,14 @@ object ChatThemeCssParser {
         when (value.trim().lowercase()) {
             "top", "above", "header" -> AvatarPositionSpec.TOP
             "side", "left", "inline", "beside" -> AvatarPositionSpec.SIDE
+            else -> null
+        }
+
+    private fun parseAvatarAlign(value: String): AvatarAlign? =
+        when (value.trim().lowercase()) {
+            "top", "start" -> AvatarAlign.TOP
+            "center", "middle" -> AvatarAlign.CENTER
+            "bottom", "end" -> AvatarAlign.BOTTOM
             else -> null
         }
 
@@ -711,16 +1248,41 @@ object ChatThemeCssParser {
         report: Boolean,
     ): VoiceStyle = applyAll(initial, declarations, ctx, report) { s, d ->
         when (d.property) {
-            "border-radius" ->
-                length(d.value)?.let { s.copy(cornerRadius = it) }
-                    ?: s.also { ctx.badValue(d, "长度值") }
+            "border-radius" -> {
+                val v = d.value.trim()
+                if (v.endsWith("%")) {
+                    val p = v.dropLast(1).trim().toFloatOrNull()
+                    if (p != null && p.isFinite() && p >= 0f) {
+                        s.copy(cornerRadiusPercent = p.coerceAtMost(50f))
+                    } else {
+                        s.also { ctx.badValue(d, "长度或百分比") }
+                    }
+                } else {
+                    length(v)?.let { s.copy(cornerRadius = it, cornerRadiusPercent = null) }
+                        ?: s.also { ctx.badValue(d, "长度或百分比") }
+                }
+            }
 
-            "background", "background-color" ->
-                color(d.value)?.let { s.copy(backgroundColor = it) }
+            "background" -> {
+                val gradient = linearGradient(d.value)
+                when {
+                    gradient != null -> s.copy(backgroundGradient = gradient, backgroundColor = null)
+                    else -> color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
+                        ?: s.also { ctx.badValue(d, "颜色值或 linear-gradient(...)") }
+                }
+            }
+
+            "background-color" ->
+                color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
                     ?: s.also { ctx.badValue(d, "颜色值") }
 
+            // color 保持波形色别名，避免已有主题改语义；秒数文字用 text-color
             "waveform-color", "wave-color", "color" ->
                 color(d.value)?.let { s.copy(waveformColor = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "text-color" ->
+                color(d.value)?.let { s.copy(textColor = it) }
                     ?: s.also { ctx.badValue(d, "颜色值") }
 
             "icon-size" ->
@@ -754,6 +1316,66 @@ object ChatThemeCssParser {
             "padding-left", "padding-right", "padding-horizontal" ->
                 length(d.value)?.let { s.copy(paddingHorizontal = it) }
                     ?: s.also { ctx.badValue(d, "长度值") }
+
+            "border" -> border(d.value)?.let { (w, c) ->
+                s.copy(borderWidth = w, borderColor = c ?: s.borderColor)
+            } ?: s.also { ctx.badValue(d, "如 1dp solid #ccc") }
+
+            "border-width" ->
+                length(d.value)?.let { s.copy(borderWidth = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "border-color" ->
+                color(d.value)?.let { s.copy(borderColor = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "box-shadow", "shadow" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(shadow = null)
+                } else {
+                    boxShadow(d.value)?.let { s.copy(shadow = it) }
+                        ?: s.also { ctx.badValue(d, "如 0 2dp 6dp rgba(0,0,0,0.1) 或 none") }
+                }
+
+            "opacity" ->
+                alpha(d.value)?.let { s.copy(backgroundOpacity = it) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            "sticker", "sticker-image" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(sticker = s.sticker.copy(source = null, sourceLine = 0))
+                } else {
+                    url(d.value)?.let {
+                        s.copy(sticker = s.sticker.copy(source = it, sourceLine = d.line))
+                    } ?: s.also { ctx.badValue(d, "url(\"cat.png\") 或 none") }
+                }
+
+            "sticker-size" ->
+                length(d.value)?.takeIf { it > 0f }?.let { s.copy(sticker = s.sticker.copy(size = it)) }
+                    ?: s.also { ctx.badValue(d, "正的长度值，如 24dp") }
+
+            "sticker-position", "sticker-corner" ->
+                parseStickerCorner(d.value)?.let { s.copy(sticker = s.sticker.copy(corner = it)) }
+                    ?: s.also { ctx.badValue(d, "top-left/top-right/bottom-left/bottom-right") }
+
+            "sticker-offset" -> offsetPair(d.value)?.let { (x, y) ->
+                s.copy(sticker = s.sticker.copy(offsetX = x, offsetY = y))
+            } ?: s.also { ctx.badValue(d, "一个或两个长度值，如 -6dp -4dp") }
+
+            "sticker-rotate" ->
+                angle(d.value)?.let { s.copy(sticker = s.sticker.copy(rotate = it)) }
+                    ?: s.also { ctx.badValue(d, "角度值，如 10deg 或 -10deg") }
+
+            "sticker-rotate-random" ->
+                angle(d.value)?.let { s.copy(sticker = s.sticker.copy(rotateRandom = kotlin.math.abs(it))) }
+                    ?: s.also { ctx.badValue(d, "角度值，如 8deg") }
+
+            "sticker-opacity" ->
+                alpha(d.value)?.let { s.copy(sticker = s.sticker.copy(opacity = it)) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            "border-image", "border-image-source", "border-image-slice", "border-image-width" ->
+                applyBorderImage(s.borderImage, d, ctx)?.let { s.copy(borderImage = it) }
 
             else -> null
         }

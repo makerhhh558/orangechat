@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.datetime.toJavaLocalDateTime
@@ -38,8 +39,12 @@ import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import coil3.compose.AsyncImage
 import me.rerere.rikkahub.data.theme.AvatarStyle
+import me.rerere.rikkahub.data.theme.ChatThemeRepository
+import me.rerere.rikkahub.data.theme.rememberThemeImageModel
 import me.rerere.rikkahub.data.theme.toShapeOrNull
+import org.koin.compose.koinInject
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.toComposeColor
@@ -59,33 +64,59 @@ private fun Modifier.avatarBorder(style: AvatarStyle): Modifier {
     )
 }
 
+/**
+ * 头像挂件。
+ *
+ * css 优先：写了 [AvatarStyle.frameSource] 就用主题图片加载（和贴纸同一条链路），
+ * 加载失败不显示；写了 `none`（[AvatarStyle.frameDisabled]）则连「显示设置」里的挂件也关掉。
+ * 两者都没写时回退显示设置里的本地挂件。
+ *
+ * 外层 Box 已固定成头像尺寸。这里用 [wrapContentSize] 放开测量，
+ * 挂件可以比头像大、居中溢出，但不会撑大占位、也不会挤动气泡和昵称。
+ */
 @Composable
 private fun AvatarFrameOverlay(
-    framePath: String,
-    offsetX: Float,
-    offsetY: Float,
-    scale: Float,
-    baseSize: Float,
+    style: AvatarStyle,
+    fallbackPath: String,
+    fallbackOffsetX: Float,
+    fallbackOffsetY: Float,
+    fallbackScale: Float,
 ) {
-    if (framePath.isNotBlank() && File(framePath).exists()) {
-        val context = LocalContext.current
-        val bitmap = remember(framePath) {
-            runCatching {
-                BitmapFactory.decodeFile(framePath)?.asImageBitmap()
-            }.getOrNull()
-        }
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = "Avatar Frame",
-                modifier = Modifier
-                    .size((baseSize * scale).dp)
-                    .offset(x = offsetX.dp, y = offsetY.dp),
-                contentScale = ContentScale.Fit,
-                alpha = 1f,
-            )
-        }
+    if (style.frameDisabled) return
+    val source = style.frameSource?.trim()?.takeIf { it.isNotEmpty() }
+    if (source != null) {
+        val spec = LocalChatThemeSpec.current
+        val model = rememberThemeImageModel(source, spec.baseDir) ?: return
+        val themeRepo: ChatThemeRepository = koinInject()
+        val themeName = spec.name
+        val frameDp = style.frameSizeDp ?: style.size * (style.frameSizePercent ?: 1.4f)
+        AsyncImage(
+            model = model,
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            onError = {
+                themeRepo.reportAvatarFrameLoadFailure(themeName, source, style.frameSourceLine)
+            },
+            modifier = Modifier
+                .wrapContentSize(unbounded = true)
+                .requiredSize(frameDp.dp)
+                .offset(x = style.frameOffsetX.dp, y = style.frameOffsetY.dp),
+        )
+        return
     }
+    if (fallbackPath.isBlank() || !File(fallbackPath).exists()) return
+    val bitmap = remember(fallbackPath) {
+        runCatching { BitmapFactory.decodeFile(fallbackPath)?.asImageBitmap() }.getOrNull()
+    } ?: return
+    Image(
+        bitmap = bitmap,
+        contentDescription = null,
+        modifier = Modifier
+            .wrapContentSize(unbounded = true)
+            .requiredSize((style.size * fallbackScale).dp)
+            .offset(x = fallbackOffsetX.dp, y = fallbackOffsetY.dp),
+        contentScale = ContentScale.Fit,
+    )
 }
 
 @Composable
@@ -94,17 +125,21 @@ fun ChatMessageUserAvatar(
     avatar: Avatar,
     nickname: String,
     modifier: Modifier = Modifier,
+    /** position: side 时头像挪到气泡旁边，昵称行不再画头像 */
+    hideAvatar: Boolean = false,
+    /** 只画头像，供气泡侧边对齐使用 */
+    iconsOnly: Boolean = false,
 ) {
     val settings = LocalSettings.current
     val style = LocalChatThemeSpec.current.userAvatar
     val visible = style.visible ?: settings.displaySetting.showUserAvatar
     if (message.role == MessageRole.USER && !message.parts.isEmptyUIMessage() && visible) {
         Row(
-            modifier = modifier.padding(vertical = 8.dp),
+            modifier = if (iconsOnly) modifier else modifier.padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(style.gap.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
+            if (!iconsOnly) Column(
                 modifier = Modifier,
                 horizontalAlignment = Alignment.End,
             ) {
@@ -123,7 +158,10 @@ fun ChatMessageUserAvatar(
                     )
                 }
             }
-            Box(contentAlignment = Alignment.Center) {
+            if (!hideAvatar) Box(
+                modifier = Modifier.size(style.size.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 UIAvatar(
                     name = nickname,
                     modifier = Modifier
@@ -134,11 +172,11 @@ fun ChatMessageUserAvatar(
                     shapeOverride = style.toShapeOrNull(),
                 )
                 AvatarFrameOverlay(
-                    framePath = settings.displaySetting.userAvatarFramePath,
-                    offsetX = settings.displaySetting.userAvatarFrameOffsetX,
-                    offsetY = settings.displaySetting.userAvatarFrameOffsetY,
-                    scale = settings.displaySetting.userAvatarFrameScale,
-                    baseSize = style.size,
+                    style = style,
+                    fallbackPath = settings.displaySetting.userAvatarFramePath,
+                    fallbackOffsetX = settings.displaySetting.userAvatarFrameOffsetX,
+                    fallbackOffsetY = settings.displaySetting.userAvatarFrameOffsetY,
+                    fallbackScale = settings.displaySetting.userAvatarFrameScale,
                 )
             }
         }
@@ -152,6 +190,10 @@ fun ChatMessageAssistantAvatar(
     model: Model?,
     assistant: Assistant?,
     modifier: Modifier = Modifier,
+    /** position: side 时头像挪到气泡旁边，昵称行不再画头像 */
+    hideAvatar: Boolean = false,
+    /** 只画头像，供气泡侧边对齐使用 */
+    iconsOnly: Boolean = false,
 ) {
     val settings = LocalSettings.current
     val style = LocalChatThemeSpec.current.assistantAvatar
@@ -164,8 +206,11 @@ fun ChatMessageAssistantAvatar(
             modifier = modifier
         ) {
             if (useAssistantAvatar) {
-                if (showIcon) {
-                    Box(contentAlignment = Alignment.Center) {
+                if (showIcon && !hideAvatar) {
+                    Box(
+                        modifier = Modifier.size(style.size.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         UIAvatar(
                             name = assistant.name,
                             modifier = Modifier
@@ -176,15 +221,15 @@ fun ChatMessageAssistantAvatar(
                             shapeOverride = style.toShapeOrNull(),
                         )
                         AvatarFrameOverlay(
-                            framePath = settings.displaySetting.aiAvatarFramePath,
-                            offsetX = settings.displaySetting.aiAvatarFrameOffsetX,
-                            offsetY = settings.displaySetting.aiAvatarFrameOffsetY,
-                            scale = settings.displaySetting.aiAvatarFrameScale,
-                            baseSize = style.size,
+                            style = style,
+                            fallbackPath = settings.displaySetting.aiAvatarFramePath,
+                            fallbackOffsetX = settings.displaySetting.aiAvatarFrameOffsetX,
+                            fallbackOffsetY = settings.displaySetting.aiAvatarFrameOffsetY,
+                            fallbackScale = settings.displaySetting.aiAvatarFrameScale,
                         )
                     }
                 }
-                Column(
+                if (!iconsOnly) Column(
                     modifier = Modifier.weight(1f)
                 ) {
                     if(settings.displaySetting.showModelName) {
@@ -204,8 +249,11 @@ fun ChatMessageAssistantAvatar(
                     }
                 }
             } else if (model != null) {
-                if (showIcon) {
-                    Box(contentAlignment = Alignment.Center) {
+                if (showIcon && !hideAvatar) {
+                    Box(
+                        modifier = Modifier.size(style.size.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         AutoAIIcon(
                             name = model.modelId,
                             modifier = Modifier
@@ -215,15 +263,15 @@ fun ChatMessageAssistantAvatar(
                             shapeOverride = style.toShapeOrNull(),
                         )
                         AvatarFrameOverlay(
-                            framePath = settings.displaySetting.aiAvatarFramePath,
-                            offsetX = settings.displaySetting.aiAvatarFrameOffsetX,
-                            offsetY = settings.displaySetting.aiAvatarFrameOffsetY,
-                            scale = settings.displaySetting.aiAvatarFrameScale,
-                            baseSize = style.size,
+                            style = style,
+                            fallbackPath = settings.displaySetting.aiAvatarFramePath,
+                            fallbackOffsetX = settings.displaySetting.aiAvatarFrameOffsetX,
+                            fallbackOffsetY = settings.displaySetting.aiAvatarFrameOffsetY,
+                            fallbackScale = settings.displaySetting.aiAvatarFrameScale,
                         )
                     }
                 }
-                Column(
+                if (!iconsOnly) Column(
                     modifier = Modifier.weight(1f)
                 ) {
                     if(settings.displaySetting.showModelName) {
