@@ -79,6 +79,8 @@ import kotlinx.coroutines.flow.mapLatest
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.ui.context.ChatThemeTextOverrides
+import me.rerere.rikkahub.ui.context.LocalChatThemeText
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.theme.JetbrainsMono
 import me.rerere.rikkahub.utils.toDp
@@ -351,6 +353,7 @@ private fun HtmlParagraphContent(
     val hasInlineMath = element.select("span.math").any { it.attr("inline") == "true" }
     val colorScheme = MaterialTheme.colorScheme
     val textStyle = LocalTextStyle.current
+    val themeText = LocalChatThemeText.current
 
     val (annotatedString, inlineContents) = remember(
         element.outerHtml(),
@@ -359,6 +362,7 @@ private fun HtmlParagraphContent(
         density,
         textStyle,
         onClickCitation,
+        themeText,
     ) {
         val contents = mutableMapOf<String, InlineTextContent>()
         val text = buildAnnotatedString {
@@ -371,6 +375,7 @@ private fun HtmlParagraphContent(
                     style = textStyle,
                     enableLatexRendering = enableLatexRendering,
                     onClickCitation = onClickCitation,
+                    themeText = themeText,
                 )
             }
         }
@@ -406,7 +411,10 @@ private fun HtmlHeading(element: Element, onClickCitation: (String) -> Unit) {
     val verticalPadding = when (level) {
         1 -> 16.dp; 2 -> 14.dp; 3 -> 12.dp; 4 -> 10.dp; 5 -> 8.dp; else -> 6.dp
     }
-    ProvideTextStyle(LocalTextStyle.current.merge(headingStyle)) {
+    // 和 Markdown.kt 的标题分支保持一致：CSS 设了 font-size 就按同一倍数跟随，
+    // 否则两条渲染路径会出现"有的消息标题变大、有的不变"
+    val themeText = LocalChatThemeText.current
+    ProvideTextStyle(LocalTextStyle.current.merge(headingStyle.scaleFontSize(themeText.fontScale))) {
         Box(modifier = Modifier.padding(vertical = verticalPadding)) {
             HtmlParagraph(element = element, onClickCitation = onClickCitation)
         }
@@ -712,6 +720,7 @@ private fun HtmlInlineGroup(nodes: List<Node>, onClickCitation: (String) -> Unit
     val colorScheme = MaterialTheme.colorScheme
     val textStyle = LocalTextStyle.current
     val density = LocalDensity.current
+    val themeText = LocalChatThemeText.current
 
     val key = remember(nodes) { nodes.joinToString("") { if (it is Element) it.outerHtml() else it.toString() } }
     val (annotatedString, inlineContents) = remember(
@@ -721,6 +730,7 @@ private fun HtmlInlineGroup(nodes: List<Node>, onClickCitation: (String) -> Unit
         density,
         textStyle,
         onClickCitation,
+        themeText,
     ) {
         val contents = mutableMapOf<String, InlineTextContent>()
         val text = buildAnnotatedString {
@@ -733,6 +743,7 @@ private fun HtmlInlineGroup(nodes: List<Node>, onClickCitation: (String) -> Unit
                     style = textStyle,
                     enableLatexRendering = enableLatexRendering,
                     onClickCitation = onClickCitation,
+                    themeText = themeText,
                 )
             }
         }
@@ -790,6 +801,7 @@ private fun HtmlInlineAsComposable(node: Node, onClickCitation: (String) -> Unit
                     val textStyle = LocalTextStyle.current
                     val density = LocalDensity.current
                     val enableLatexRendering = LocalSettings.current.displaySetting.enableLatexRendering
+                    val themeText = LocalChatThemeText.current
                     val (annotated, inlineContents) = remember(
                         node.outerHtml(),
                         enableLatexRendering,
@@ -797,6 +809,7 @@ private fun HtmlInlineAsComposable(node: Node, onClickCitation: (String) -> Unit
                         density,
                         textStyle,
                         onClickCitation,
+                        themeText,
                     ) {
                         val contents = mutableMapOf<String, InlineTextContent>()
                         val text = buildAnnotatedString {
@@ -808,6 +821,7 @@ private fun HtmlInlineAsComposable(node: Node, onClickCitation: (String) -> Unit
                                 style = textStyle,
                                 enableLatexRendering = enableLatexRendering,
                                 onClickCitation = onClickCitation,
+                                themeText = themeText,
                             )
                         }
                         text to contents
@@ -829,6 +843,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineNode(
     style: TextStyle,
     enableLatexRendering: Boolean,
     onClickCitation: (String) -> Unit,
+    themeText: ChatThemeTextOverrides = ChatThemeTextOverrides.NONE,
 ) {
     when (node) {
         is TextNode -> append(node.text())
@@ -840,6 +855,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineNode(
             style = style,
             enableLatexRendering = enableLatexRendering,
             onClickCitation = onClickCitation,
+            themeText = themeText,
         )
     }
 }
@@ -852,6 +868,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
     style: TextStyle,
     enableLatexRendering: Boolean,
     onClickCitation: (String) -> Unit,
+    themeText: ChatThemeTextOverrides = ChatThemeTextOverrides.NONE,
 ) {
     val cssStyle = element.attr("style").takeIf { it.isNotBlank() }?.let {
         parseInlineSpanStyle(
@@ -870,6 +887,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
             style = inheritedStyle,
             enableLatexRendering = enableLatexRendering,
             onClickCitation = onClickCitation,
+            themeText = themeText,
         )
     }
 
@@ -899,7 +917,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
             SpanStyle(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 0.95.em,
-                background = colorScheme.surfaceVariant,
+                background = themeText.codeBackground ?: colorScheme.surfaceVariant,
                 color = colorScheme.primary,
             ).merge(cssStyle ?: SpanStyle())
         ) {
@@ -955,7 +973,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
 
                 href.isNotEmpty() -> {
                     val linkStyle = SpanStyle(
-                        color = colorScheme.primary,
+                        color = themeText.linkColor ?: colorScheme.primary,
                         textDecoration = TextDecoration.Underline,
                     ).merge(cssStyle ?: SpanStyle())
                     withLink(LinkAnnotation.Url(href)) {

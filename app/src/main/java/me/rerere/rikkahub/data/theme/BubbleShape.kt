@@ -7,12 +7,32 @@
 package me.rerere.rikkahub.data.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -206,5 +226,174 @@ fun TailPosition.anchor(): TailAnchor = when (this) {
 fun AvatarStyle.toShapeOrNull(): Shape? = when (shape) {
     AvatarShapeSpec.CIRCLE -> null
     AvatarShapeSpec.SQUARE -> RoundedCornerShape(0.dp)
-    AvatarShapeSpec.ROUNDED -> RoundedCornerShape(cornerRadius.dp)
+    AvatarShapeSpec.ROUNDED -> cornerRadiusPercent?.let { RoundedCornerShape(percent = it.toInt()) }
+        ?: RoundedCornerShape(cornerRadius.dp)
 }
+
+/** 把任意 [Shape] 的轮廓转成 [Path]，供阴影沿实际形状绘制。 */
+private fun Shape.toPath(size: Size, layoutDirection: LayoutDirection, density: Density): Path =
+    when (val outline = createOutline(size, layoutDirection, density)) {
+        is Outline.Generic -> outline.path
+        is Outline.Rounded -> Path().apply { addRoundRect(outline.roundRect) }
+        is Outline.Rectangle -> Path().apply { addRect(outline.rect) }
+    }
+
+/**
+ * 沿 [shape] 的实际轮廓画一层阴影。
+ *
+ * 用自绘而非 `Modifier.shadow` / `graphicsLayer`：
+ * - [BubbleWithTailShape] 把尖钩 `addPath` 并进了本体同一条 Path，
+ *   取 Outline 自绘能让阴影天然带上尖钩；
+ * - `Modifier.shadow` 不支持彩色和偏移，`graphicsLayer` 的阴影颜色也无法控制偏移。
+ *
+ * 实现上用透明画笔 + `setShadowLayer`：只落下阴影、不填充形状本身。
+ * 本体范围内的阴影用 `clipOutPath` 挖掉，半透明背景底下不会透出一块深色。
+ *
+ * 注意：硬件加速下 `setShadowLayer` 对 `drawPath` 只在 Android 9（API 28）及以上生效，
+ * 26/27 不会画出阴影——按既定方案不另做兜底，仅用 [runCatching] 保证不崩。
+ *
+ * 必须放在 `clip` 之前，否则超出气泡的阴影会被裁掉。
+ */
+fun Modifier.bubbleShadow(shadow: BubbleShadow?, shape: Shape): Modifier {
+    if (shadow == null || (shadow.color ushr 24) == 0L) return this
+    return drawBehind { drawBubbleShadow(shadow, shape) }
+}
+
+private fun DrawScope.drawBubbleShadow(shadow: BubbleShadow, shape: Shape) {
+    if (size.minDimension <= 0f) return
+    runCatching {
+        val path = shape.toPath(size, layoutDirection, this).asAndroidPath()
+        val spreadPx = shadow.spread.dp.toPx()
+        val target = android.graphics.Path(path)
+        // spread 用「以中心为锚等比放大轮廓」近似：setShadowLayer 本身没有 spread 概念
+        if (spreadPx != 0f) {
+            val sx = (size.width + spreadPx * 2f) / size.width
+            val sy = (size.height + spreadPx * 2f) / size.height
+            if (sx > 0f && sy > 0f) {
+                val matrix = android.graphics.Matrix().apply {
+                    setScale(sx, sy, size.width / 2f, size.height / 2f)
+                }
+                target.transform(matrix)
+            }
+        }
+        val paint = Paint().asFrameworkPaint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.TRANSPARENT
+            setShadowLayer(
+                shadow.blur.dp.toPx().coerceAtLeast(0.01f),
+                shadow.offsetX.dp.toPx(),
+                shadow.offsetY.dp.toPx(),
+                shadow.color.toInt(),
+            )
+        }
+        drawIntoCanvas { canvas ->
+            val native = canvas.nativeCanvas
+            native.save()
+            // 挖掉本体，阴影只留在轮廓外面，半透明背景不会把底下的阴影透出来
+            native.clipOutPath(path)
+            native.drawPath(target, paint)
+            native.restore()
+        }
+    }
+}
+
+/**
+ * 按 CSS 角度把线性渐变铺到 [shape] 的轮廓上，尖钩和气泡是同一条 Path，会一起上色。
+ *
+ * 0deg 向上、顺时针递增。`to top right` 这类对角写法按当前宽高比换算，
+ * 让渐变轴线正好穿过两个对角。
+ */
+fun Modifier.bubbleGradient(gradient: CssGradient, shape: Shape, alpha: Float): Modifier {
+    if (gradient.colors.size < 2 || alpha <= 0f) return this
+    return drawBehind {
+        if (size.minDimension <= 0f) return@drawBehind
+        val angle = gradientAngleDeg(gradient, size.width, size.height)
+        val rad = angle * (PI / 180.0)
+        val dx = sin(rad).toFloat()
+        val dy = -cos(rad).toFloat()
+        val half = (abs(size.width * dx) + abs(size.height * dy)) / 2f
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val brush = Brush.linearGradient(
+            colors = gradient.colors.map { Color(it.toInt()) },
+            start = center - Offset(dx, dy) * half,
+            end = center + Offset(dx, dy) * half,
+        )
+        drawPath(
+            path = shape.toPath(size, layoutDirection, this),
+            brush = brush,
+            alpha = alpha.coerceIn(0f, 1f),
+        )
+    }
+}
+
+/** 对角渐变按气泡宽高比换成 CSS 角度；普通角度原样返回。 */
+private fun gradientAngleDeg(gradient: CssGradient, width: Float, height: Float): Float {
+    val corner = gradient.toCorner ?: return gradient.angleDeg
+    if (width <= 0f || height <= 0f) return gradient.angleDeg
+    val diagonal = Math.toDegrees(atan2(height.toDouble(), width.toDouble())).toFloat()
+    return when (corner) {
+        GradientCorner.TOP_RIGHT -> 90f - diagonal
+        GradientCorner.BOTTOM_RIGHT -> 90f + diagonal
+        GradientCorner.BOTTOM_LEFT -> 270f - diagonal
+        GradientCorner.TOP_LEFT -> 270f + diagonal
+    }
+}
+
+/**
+ * 九宫格皮肤：四个角不拉伸，四条边单向拉伸，中间双向拉伸。
+ *
+ * [slice] 是原图像素，顺序上右下左。[widthDp] 是切好的边在目标上画多宽（dp），
+ * 为 null 时用 slice 的数值当 dp。边宽加起来超过目标时按比例缩小，避免中间被挤成负数。
+ */
+fun Modifier.nineSlice(image: ImageBitmap, slice: List<Float>, widthDp: List<Float>?): Modifier =
+    drawBehind {
+        val imageWidth = image.width
+        val imageHeight = image.height
+        if (imageWidth <= 0 || imageHeight <= 0 || size.minDimension <= 0f) return@drawBehind
+        val srcTop = (slice.getOrElse(0) { 0f }).coerceIn(0f, imageHeight.toFloat())
+        val srcRight = (slice.getOrElse(1) { 0f }).coerceIn(0f, imageWidth.toFloat())
+        val srcBottom = (slice.getOrElse(2) { 0f }).coerceIn(0f, (imageHeight - srcTop).coerceAtLeast(0f))
+        val srcLeft = (slice.getOrElse(3) { 0f }).coerceIn(0f, (imageWidth - srcRight).coerceAtLeast(0f))
+        val widths = widthDp ?: slice
+        var dstTop = (widths.getOrElse(0) { srcTop }).dp.toPx().coerceAtLeast(0f)
+        var dstRight = (widths.getOrElse(1) { srcRight }).dp.toPx().coerceAtLeast(0f)
+        var dstBottom = (widths.getOrElse(2) { srcBottom }).dp.toPx().coerceAtLeast(0f)
+        var dstLeft = (widths.getOrElse(3) { srcLeft }).dp.toPx().coerceAtLeast(0f)
+        val vertical = dstTop + dstBottom
+        if (vertical > size.height && vertical > 0f) {
+            val scale = size.height / vertical
+            dstTop *= scale
+            dstBottom *= scale
+        }
+        val horizontal = dstLeft + dstRight
+        if (horizontal > size.width && horizontal > 0f) {
+            val scale = size.width / horizontal
+            dstLeft *= scale
+            dstRight *= scale
+        }
+        val srcX = floatArrayOf(0f, srcLeft, imageWidth - srcRight)
+        val srcY = floatArrayOf(0f, srcTop, imageHeight - srcBottom)
+        val srcW = floatArrayOf(srcLeft, (imageWidth - srcLeft - srcRight).coerceAtLeast(0f), srcRight)
+        val srcH = floatArrayOf(srcTop, (imageHeight - srcTop - srcBottom).coerceAtLeast(0f), srcBottom)
+        val dstX = floatArrayOf(0f, dstLeft, size.width - dstRight)
+        val dstY = floatArrayOf(0f, dstTop, size.height - dstBottom)
+        val dstW = floatArrayOf(dstLeft, (size.width - dstLeft - dstRight).coerceAtLeast(0f), dstRight)
+        val dstH = floatArrayOf(dstTop, (size.height - dstTop - dstBottom).coerceAtLeast(0f), dstBottom)
+        for (row in 0..2) {
+            for (col in 0..2) {
+                val sw = srcW[col].toInt()
+                val sh = srcH[row].toInt()
+                val dw = dstW[col].toInt()
+                val dh = dstH[row].toInt()
+                if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) continue
+                drawImage(
+                    image = image,
+                    srcOffset = IntOffset(srcX[col].toInt(), srcY[row].toInt()),
+                    srcSize = IntSize(sw, sh),
+                    dstOffset = IntOffset(dstX[col].toInt(), dstY[row].toInt()),
+                    dstSize = IntSize(dw, dh),
+                    filterQuality = FilterQuality.Medium,
+                )
+            }
+        }
+    }

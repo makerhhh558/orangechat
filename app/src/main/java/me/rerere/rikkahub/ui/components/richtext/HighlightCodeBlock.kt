@@ -83,6 +83,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
+import me.rerere.rikkahub.ui.context.LocalChatThemeText
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalDisplaySettings
 import me.rerere.rikkahub.ui.context.Navigator
@@ -104,11 +105,16 @@ fun HighlightCodeBlock(
     language: String,
     modifier: Modifier = Modifier,
     completeCodeBlock: Boolean = true,
-    style: TextStyle? = TextStyle(
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-    ),
+    // 默认参数在组合期求值，所以这里能读 CompositionLocal。
+    // CSS 未设 font-size 时 fontScale 为 null，字号与改动前完全一致。
+    style: TextStyle? = LocalChatThemeText.current.fontScale.let { scale ->
+        TextStyle(
+            fontSize = 12.sp * (scale ?: 1f),
+            lineHeight = 16.sp * (scale ?: 1f),
+        )
+    },
 ) {
+    val themeText = LocalChatThemeText.current
     val darkMode = LocalDarkMode.current
     val colorPalette = if (darkMode) AtomOneDarkPalette else AtomOneLightPalette
     val scrollState = rememberScrollState()
@@ -176,12 +182,13 @@ fun HighlightCodeBlock(
         modifier = modifier
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large)
             .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(themeText.codeBackground ?: MaterialTheme.colorScheme.surfaceContainer),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                // CSS 设了 code-background 时标题栏用同一个色，不再分层
+                .background(themeText.codeBackground ?: MaterialTheme.colorScheme.surfaceContainerHighest)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             HighlightCodeActions(
