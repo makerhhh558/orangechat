@@ -45,6 +45,21 @@
 | `.voice.user` `.user-voice` `.voice-user` | 我方语音 |
 | `.voice.assistant` `.assistant-voice` `.voice-assistant` | 对方语音 |
 
+### 心里话 ☁️
+
+| 写法 | 作用对象 |
+|---|---|
+| `.cloud-icon` `.cloud` | ☁️ 图标 |
+| `.cloud-popup` `.cloud-panel` | 心里话弹窗 |
+| `.cloud-text` | 弹窗里的文字 |
+| `.cloud-mood` | 心情胶囊 |
+| `.cloud-bar-row` | 一条进度条整行 |
+| `.cloud-bar-label` | 进度条左边的名字 |
+| `.cloud-bar` | 进度条轨道 |
+| `.cloud-bar-fill` | 进度条填充 |
+| `.cloud-bar-fill.low` `.cloud-bar-fill.mid` `.cloud-bar-fill.high` | 按数值分档的填充 |
+| `.cloud-bar-value` | 进度条右边的数值 |
+
 ### 不支持的写法
 
 ```css
@@ -305,12 +320,146 @@
 
 ---
 
+## 心里话属性
+
+没开 CSS 主题时用内置样式。不认识的属性照常忽略。
+
+### `.cloud-icon`
+
+| 属性 | 别名 | 取值 | 说明 |
+|---|---|---|---|
+| `content` | `background` `background-image` `image` | `url(...)` / `none` | 图标图片，加载失败退回 ☁️ 字符 |
+| `width` | `height` `size` `font-size` | 长度 | 图标大小 |
+| `offset` | `translate` | 1~2 个长度，可负 | 相对气泡右侧的偏移 |
+| `opacity` | — | 0~1 | 图标透明度 |
+
+### `.cloud-popup`
+
+| 属性 | 别名 | 取值 | 说明 |
+|---|---|---|---|
+| `border-radius` | — | 长度或百分比 | 百分比按短边折算，上限夹 50% |
+| `background` | — | 颜色或渐变 | 渐变规则同气泡，停靠位置忽略 |
+| `background-color` | — | 颜色 | 只接受纯色，并清掉渐变 |
+| `opacity` | — | 0~1 | 只作用于背景 |
+| `padding` | — | 1~4 个长度 | 顺序同上右下左 |
+| `padding-top` | `padding-bottom` `padding-vertical` | 长度 | |
+| `padding-left` | `padding-right` `padding-horizontal` | 长度 | |
+| `border` | — | 简写 | 同气泡 |
+| `border-width` | — | 长度 | |
+| `border-color` | — | 颜色 | |
+| `box-shadow` | `shadow` | 阴影 / `none` | 同气泡 |
+| `max-width` | — | 长度 | 弹窗最大宽度 |
+| `sticker` | `sticker-image` | 同气泡 | |
+| `sticker-size` | `sticker-position` `sticker-offset` `sticker-rotate` `sticker-rotate-random` `sticker-opacity` | 同气泡 | |
+
+### `.cloud-text`
+
+| 属性 | 别名 | 取值 | 说明 |
+|---|---|---|---|
+| `font-size` | — | 长度 | |
+| `font-weight` | — | 字重 | |
+| `line-height` | — | 倍数或长度 | 同气泡 |
+| `letter-spacing` | — | 长度，可负 | |
+| `font-family` | `font` | 字体名或 `url(...)` | |
+| `color` | `text-color` | 颜色 | |
+
+```css
+.cloud-icon {
+  content: url("cloud.png");
+  width: 22dp;
+  offset: 2dp -4dp;
+  opacity: 0.9;
+}
+.cloud-popup {
+  background: linear-gradient(to bottom, #fff8e7, #ffe4c4);
+  border-radius: 16dp;
+  padding: 12dp;
+  max-width: 240dp;
+  box-shadow: 0 2dp 8dp rgba(0, 0, 0, 0.15);
+}
+.cloud-text {
+  font-size: 14sp;
+  color: #5c4033;
+  line-height: 1.5;
+}
+```
+
+### 心情胶囊和进度条
+
+只在 `<cloud>` 里面解析，标签之外仍走 markdown。
+
+- `<mood>小得意</mood>`：心情胶囊。和文字写在同一行时，拆成前文、胶囊、后文。内容为空就丢掉。
+- `<bar label="好奇" value="92"/>`：进度条。`<bar ...></bar>` 也认。属性单引号、双引号都认，顺序不限。`value` 夹到 0~100。缺 label、value 不是数字、标签写残，整条丢掉，不把原始标签露出来。连续多条竖着排。
+
+| 选择器 | 画什么 |
+|---|---|
+| `.cloud-panel` | `.cloud-popup` 的别名，面板本身 |
+| `.cloud-mood` | 心情胶囊 |
+| `.cloud-bar-row` | 整行，固定为名字、轨道、数值 |
+| `.cloud-bar-label` | 左边的名字 |
+| `.cloud-bar` | 轨道底槽，`height` 是轨道高度 |
+| `.cloud-bar-fill` | 填充，宽度 = value% |
+| `.cloud-bar-fill.low` | value 0~40 |
+| `.cloud-bar-fill.mid` | value 41~75 |
+| `.cloud-bar-fill.high` | value 76~100 |
+| `.cloud-bar-value` | 右边的数值，显示成「92%」 |
+
+这些类共用下面的属性，不认识的照常忽略。主题里没写时用内置的素净默认。`.low` / `.mid` / `.high` 必须跟在 `.cloud-bar-fill` 后面，单独写不算选择器。某一档没写的字段回落到 `.cloud-bar-fill`。
+
+| 属性 | 别名 | 取值 | 说明 |
+|---|---|---|---|
+| `background` | — | 颜色或渐变 | 渐变规则同气泡，停靠位置忽略 |
+| `background-color` | — | 颜色 | 只接受纯色，并清掉渐变 |
+| `color` | `text-color` | 颜色 | 胶囊、名字、数值的文字颜色 |
+| `font-size` | — | 长度 | `sp` 或 `dp` |
+| `font-family` | `font` | 字体名或 `url(...)` | |
+| `border-radius` | — | 长度或百分比 | 百分比按短边折算，上限夹 50% |
+| `padding` | — | 1~4 个长度 | 顺序同上右下左，只取上下和左右 |
+| `padding-top` | `padding-bottom` `padding-vertical` | 长度 | |
+| `padding-left` | `padding-right` `padding-horizontal` | 长度 | |
+| `height` | — | 正的长度 | 轨道高度，胶囊用不到 |
+| `border` | — | 简写 | 同气泡 |
+| `border-width` | — | 长度 | |
+| `border-color` | — | 颜色 | |
+| `box-shadow` | `shadow` | 阴影 / `none` | 同气泡 |
+| `opacity` | — | 0~1 | 作用于这一块的背景 |
+
+```css
+.cloud-panel {
+  background: #fff8e7;
+  border-radius: 16dp;
+  padding: 12dp;
+}
+.cloud-mood {
+  background: #ffe4c4;
+  color: #5c4033;
+  font-size: 12sp;
+  border-radius: 50%;
+  padding: 2dp 8dp;
+}
+.cloud-bar {
+  background: #f0e6d8;
+  height: 6dp;
+  border-radius: 50%;
+}
+.cloud-bar-fill { background: #e8a87c; }
+.cloud-bar-fill.low { background: #c4b5a0; }
+.cloud-bar-fill.mid { background: #e8a87c; }
+.cloud-bar-fill.high { background: #d4764e; }
+.cloud-bar-label, .cloud-bar-value {
+  color: #8a7560;
+  font-size: 12sp;
+}
+```
+
+---
+
 ## 取值格式
 
-**长度**：`12` `12dp` `12px` `0`。`px` 和 `dp` 等价，都是密度无关像素；裸数字也按 dp。`em` / `rem` 不支持，写了算值非法。除 `tail-offset`、`letter-spacing`、`box-shadow` 的偏移、`sticker-offset` 和 `avatar-frame-offset` 外不能为负。
+**长度**：`12` `12dp` `12px` `0`。`px` 和 `dp` 等价，都是密度无关像素；裸数字也按 dp。`em` / `rem` 不支持，写了算值非法。除 `tail-offset`、`letter-spacing`、`box-shadow` 的偏移、`sticker-offset`、`avatar-frame-offset` 和 `.cloud-icon` 的 `offset` 外不能为负。
 字号（`font-size` `line-height` `letter-spacing`）还可以写 `16sp`，`sp` 跟随系统字体大小，`dp` 不跟随。
 
-**百分比**：必须带 `%`，如 `85%`。例外：`max-width`、`opacity`、`sticker-opacity` 也接受裸小数（`0.85` = 85%）。吃百分比的有：气泡 / 头像 / 语音的 `border-radius`、`max-width`、`opacity`、`sticker-opacity`。`avatar-frame-size` 也吃百分比，但可以超过 `100%`（如 `140%`），且不接受裸小数。
+**百分比**：必须带 `%`，如 `85%`。例外：`max-width`、`opacity`、`sticker-opacity` 也接受裸小数（`0.85` = 85%）。吃百分比的有：气泡 / 头像 / 语音 / `.cloud-popup` / `.cloud-mood` / `.cloud-bar*` 的 `border-radius`、`max-width`、`opacity`、`sticker-opacity`。`avatar-frame-size` 也吃百分比，但可以超过 `100%`（如 `140%`），且不接受裸小数。
 
 **角度**：`10deg` `-10deg`，不带单位时按度处理。用于 `sticker-rotate` / `sticker-rotate-random`，以及 `linear-gradient` 的方向。渐变里 `0deg` 向上、顺时针递增。
 
@@ -318,7 +467,7 @@
 `http://` / `https://` 直接联网取；其余按**相对路径**从当前 css 所在的主题文件夹里找，
 不允许用 `../` 跳出主题文件夹。找不到文件时该图层不显示（字体则回退默认字体，皮肤则回退纯色气泡）。
 
-**渐变**：`linear-gradient(45deg, #95ec69, #4c8ef7)`、`linear-gradient(to right, white, #f5f5f5)`、`linear-gradient(to top right, red, blue)`。方向可省略。用于气泡和语音的 `background`。颜色后的停靠位置忽略。
+**渐变**：`linear-gradient(45deg, #95ec69, #4c8ef7)`、`linear-gradient(to right, white, #f5f5f5)`、`linear-gradient(to top right, red, blue)`。方向可省略。用于气泡、语音和心里话面板的 `background`。颜色后的停靠位置忽略。
 
 **颜色**：
 

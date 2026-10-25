@@ -329,6 +329,96 @@ data class VoiceStyle(
 )
 
 /**
+ * ☁️ 图标样式，对应 `.cloud-icon`。
+ * [imageSource] 为 null 时用默认的 ☁️ 字符。
+ */
+data class CloudIconStyle(
+    val imageSource: String? = null,
+    /** 1 起算；0 表示没有记录到行号 */
+    val imageSourceLine: Int = 0,
+    /** 图标边长（dp） */
+    val size: Float = 20f,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f,
+    val opacity: Float = 1f,
+)
+
+/**
+ * ☁️ 弹窗样式，对应 `.cloud-popup`。
+ * 只用解析器已经支持的属性，贴纸叠在内容上层。
+ */
+data class CloudPopupStyle(
+    val cornerRadius: Float = 12f,
+    /** 圆角占短边的百分比（0~50）。非 null 时盖过 [cornerRadius] */
+    val cornerRadiusPercent: Float? = null,
+    val backgroundColor: Long? = null,
+    val backgroundGradient: CssGradient? = null,
+    /** 只作用于背景，不影响文字和贴纸。0~1 */
+    val backgroundOpacity: Float = 1f,
+    val borderWidth: Float = 0f,
+    val borderColor: Long? = null,
+    val shadow: BubbleShadow? = null,
+    val paddingHorizontal: Float = 12f,
+    val paddingVertical: Float = 8f,
+    /** 弹窗最大宽度（dp） */
+    val maxWidth: Float = 240f,
+    val sticker: BubbleSticker = BubbleSticker(),
+)
+
+/**
+ * ☁️ 面板里的盒子样式，心情胶囊、进度条轨道和数值共用。
+ * 字段全是 null，表示没写这条 CSS，渲染时用内置的素净默认。
+ * [mergeOver] 用来做分档回落：分档里写了的字段盖过基础样式。
+ */
+data class CloudBoxStyle(
+    val backgroundColor: Long? = null,
+    val backgroundGradient: CssGradient? = null,
+    val opacity: Float? = null,
+    val cornerRadius: Float? = null,
+    /** 圆角占短边的百分比（0~50）。非 null 时盖过 [cornerRadius] */
+    val cornerRadiusPercent: Float? = null,
+    val paddingHorizontal: Float? = null,
+    val paddingVertical: Float? = null,
+    val borderWidth: Float? = null,
+    val borderColor: Long? = null,
+    val shadow: BubbleShadow? = null,
+    /** 轨道高度（dp），进度条用 */
+    val height: Float? = null,
+    val fontSize: CssTextUnit? = null,
+    val fontFamily: CssFontFamily? = null,
+    val color: Long? = null,
+) {
+    /** 自身非 null 的字段盖过 [base]，没写的沿用 [base]。 */
+    fun mergeOver(base: CloudBoxStyle): CloudBoxStyle = CloudBoxStyle(
+        backgroundColor = backgroundColor ?: base.backgroundColor,
+        backgroundGradient = backgroundGradient ?: base.backgroundGradient,
+        opacity = opacity ?: base.opacity,
+        cornerRadius = cornerRadius ?: base.cornerRadius,
+        cornerRadiusPercent = cornerRadiusPercent ?: base.cornerRadiusPercent,
+        paddingHorizontal = paddingHorizontal ?: base.paddingHorizontal,
+        paddingVertical = paddingVertical ?: base.paddingVertical,
+        borderWidth = borderWidth ?: base.borderWidth,
+        borderColor = borderColor ?: base.borderColor,
+        shadow = shadow ?: base.shadow,
+        height = height ?: base.height,
+        fontSize = fontSize ?: base.fontSize,
+        fontFamily = fontFamily ?: base.fontFamily,
+        color = color ?: base.color,
+    )
+}
+
+/** ☁️ 弹窗文字样式，对应 `.cloud-text`。null 表示沿用应用默认。 */
+data class CloudTextStyle(
+    val fontSize: CssTextUnit? = null,
+    /** 100~900 */
+    val fontWeight: Int? = null,
+    val lineHeight: CssLineHeight? = null,
+    val letterSpacing: CssTextUnit? = null,
+    val fontFamily: CssFontFamily? = null,
+    val color: Long? = null,
+)
+
+/**
  * 一套完整的聊天主题。
  *
  * [BUILTIN] 是内置默认样式，也是所有回退路径的终点。
@@ -347,6 +437,18 @@ data class ChatThemeSpec(
     val message: MessageStyle = MessageStyle(),
     val userVoice: VoiceStyle = VoiceStyle(),
     val assistantVoice: VoiceStyle = VoiceStyle(),
+    val cloudIcon: CloudIconStyle = CloudIconStyle(),
+    val cloudPopup: CloudPopupStyle = CloudPopupStyle(),
+    val cloudText: CloudTextStyle = CloudTextStyle(),
+    val cloudMood: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBarRow: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBarLabel: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBar: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBarFill: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBarFillLow: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBarFillMid: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBarFillHigh: CloudBoxStyle = CloudBoxStyle(),
+    val cloudBarValue: CloudBoxStyle = CloudBoxStyle(),
 ) {
     companion object {
         /** 内置默认样式，与改造前的界面观感保持一致 */

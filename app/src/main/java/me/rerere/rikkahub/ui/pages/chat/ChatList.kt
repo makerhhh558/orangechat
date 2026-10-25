@@ -110,6 +110,7 @@ import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.context.LocalChatThemeSpec
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.utils.plus
+import me.rerere.rikkahub.utils.toDisplayText
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 
@@ -303,7 +304,7 @@ private fun ChatListNormal(
         val displayNodes = remember(conversation.messageNodes) {
             conversation.messageNodes.filter { node ->
                 val msg = node.currentMessage
-                val text = msg.toText().trim()
+                val text = msg.toDisplayText().trim()
                 !(msg.role == MessageRole.ASSISTANT && text == "[SKIP]") &&
                 !(msg.role == MessageRole.USER && text.contains("[主动消息上下文]"))
             }
@@ -621,7 +622,7 @@ private fun ChatListPreview(
             conversation.messageNodes.mapIndexed { index, node -> index to node }
         } else {
             conversation.messageNodes.mapIndexed { index, node -> index to node }
-                .filter { (_, node) -> node.currentMessage.toText().contains(searchQuery, ignoreCase = true) }
+                .filter { (_, node) -> node.currentMessage.toDisplayText().contains(searchQuery, ignoreCase = true) }
         }
     }
 
@@ -699,7 +700,7 @@ private fun ChatListPreview(
                         ) {
                             val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
                             val highlightedText = remember(searchQuery, message) {
-                                val fullText = message.toText().trim().ifBlank { "[...]" }
+                                val fullText = message.toDisplayText().trim().ifBlank { "[...]" }
                                 val messageText = extractMatchingSnippet(
                                     text = fullText,
                                     query = searchQuery

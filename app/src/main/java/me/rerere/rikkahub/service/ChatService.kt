@@ -97,6 +97,8 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.ai.defaultChatModelId
+import me.rerere.rikkahub.data.ai.resolveConversationModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Assistant
@@ -109,6 +111,8 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
 import me.rerere.rikkahub.utils.applyPlaceholders
+import me.rerere.rikkahub.utils.stripCloud
+import me.rerere.rikkahub.utils.toDisplayText
 import me.rerere.rikkahub.utils.sendNotification
 import me.rerere.rikkahub.utils.cancelNotification
 import java.time.Instant
@@ -374,7 +378,17 @@ class ChatService(
         // 总是从数据库重新加载最新数据，确保能显示主动消息等新内容
         val conversation = conversationRepo.getConversationById(conversationId)
         if (conversation != null) {
-            updateConversation(conversationId, conversation)
+            // 旧会话（modelId 为空）：首次打开时固定为当前默认模型
+            val pinned = if (conversation.modelId == null) {
+                val s = settingsStore.settingsFlow.first()
+                val assistant = s.getAssistantById(conversation.assistantId) ?: s.getCurrentAssistant()
+                val defaultId = defaultChatModelId(s, assistant)
+                if (defaultId != null) {
+                    conversationRepo.updateConversationModelId(conversationId, defaultId)
+                    conversation.copy(modelId = defaultId)
+                } else conversation
+            } else conversation
+            updateConversation(conversationId, pinned)
             // 只有当前选中助手与该对话的助手不一致时才写 DataStore，
             // 避免每次打开/切换对话都无条件写入 SELECT_ASSISTANT 触发 settingsFlow 全量重组
             val currentSettings = settingsStore.settingsFlow.value
@@ -390,6 +404,7 @@ class ChatService(
                 assistantId = assistant.id,
                 newConversation = true
             ).updateCurrentMessages(assistant.presetMessages)
+                .copy(modelId = defaultChatModelId(currentSettings, assistant))
             updateConversation(conversationId, newConversation)
         }
     }
@@ -587,7 +602,7 @@ class ChatService(
                     ?: getConversationFlow(conversationId).value
                 val assistant = settings.getAssistantById(currentConversation.assistantId)
                     ?: settings.getCurrentAssistant()
-                val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId)
+                val model = resolveConversationModel(settings, currentConversation.modelId, assistant).model
                 if (model == null) {
                     Log.e(TAG, "notifyVoiceCallDeclined: no model found, conversationId=$conversationId")
                     return@launch
@@ -819,7 +834,7 @@ class ChatService(
         val initialConversation = getConversationFlow(conversationId).value
         val assistant = settings.getAssistantById(initialConversation.assistantId)
             ?: settings.getCurrentAssistant()
-        val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId) ?: return
+        val model = resolveConversationModel(settings, initialConversation.modelId, assistant).model ?: return
 
         val senderName = if (assistant.useAssistantAvatar) {
             assistant.name.ifEmpty { context.getString(R.string.assistant_page_default_assistant) }
@@ -1285,6 +1300,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
     ): Result<Unit> = runCatching {
         val settings = settingsStore.settingsFlow.first()
         val model = settings.findModelById(settings.compressModelId)
+            ?: resolveConversationModel(
+                settings,
+                conversation.modelId,
+                settings.getAssistantById(conversation.assistantId),
+            ).model
             ?: settings.getCurrentChatModel()
             ?: throw IllegalStateException("No model available for compression")
         val provider = model.findProvider(settings.providers)
@@ -1442,7 +1462,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             notificationId = 1
         ) {
             title = senderName
-            content = conversation.currentMessages.lastOrNull()?.toText()?.take(50)?.trim() ?: ""
+            content = conversation.currentMessages.lastOrNull()?.toDisplayText()?.take(50)?.trim() ?: ""
             autoCancel = true
             useDefaults = true
             category = NotificationCompat.CATEGORY_MESSAGE
@@ -1511,7 +1531,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 Triple(
                     context.getString(R.string.notification_live_update_chip_writing),
                     context.getString(R.string.notification_live_update_writing),
-                    lastText.text.takeLast(200)
+                    lastText.text.stripCloud().takeLast(200)
                 )
             }
             // 默认状态
@@ -1564,6 +1584,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
      * 后续任意 saveConversation(id, state.value) 会用整对象把 folder_id 覆盖回旧值，导致移动丢失。
      * 先改内存可确保这段窗口内的整对象保存也带上新 folderId。
      */
+    /**
+     * 只修改该会话固定使用的模型，不影响助手/全局默认。先改内存再落库，原因同 moveConversationToFolder。
+     */
+    suspend fun setConversationModel(conversationId: Uuid, modelId: Uuid) {
+        updateConversationState(conversationId) { it.copy(modelId = modelId) }
+        conversationRepo.updateConversationModelId(conversationId, modelId)
+    }
+
     suspend fun moveConversationToFolder(conversationId: Uuid, folderId: Uuid?) {
         if (sessions.containsKey(conversationId)) {
             updateConversationState(conversationId) { it.copy(folderId = folderId) }

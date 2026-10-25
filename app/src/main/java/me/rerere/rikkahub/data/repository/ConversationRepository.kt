@@ -401,6 +401,7 @@ class ConversationRepository(
             isPinned = conversation.isPinned,
             customSystemPrompt = conversation.customSystemPrompt ?: "",
             folderId = conversation.folderId?.toString() ?: "",
+            modelId = conversation.modelId?.toString(),
         )
     }
 
@@ -419,6 +420,7 @@ class ConversationRepository(
             isPinned = conversationEntity.isPinned,
             customSystemPrompt = conversationEntity.customSystemPrompt.ifEmpty { null },
             folderId = conversationEntity.folderId.ifEmpty { null }?.let { Uuid.parse(it) },
+            modelId = conversationEntity.modelId?.let { runCatching { Uuid.parse(it) }.getOrNull() },
         )
     }
 
@@ -442,6 +444,13 @@ class ConversationRepository(
     /**
      * 单列更新会话的文件夹归属，folderId 为 null 表示移出文件夹（未归类）。
      */
+    suspend fun updateConversationModelId(conversationId: Uuid, modelId: Uuid?) {
+        conversationDAO.updateModelId(
+            id = conversationId.toString(),
+            modelId = modelId?.toString()
+        )
+    }
+
     suspend fun updateConversationFolderId(conversationId: Uuid, folderId: Uuid?) {
         conversationDAO.updateFolderId(
             id = conversationId.toString(),

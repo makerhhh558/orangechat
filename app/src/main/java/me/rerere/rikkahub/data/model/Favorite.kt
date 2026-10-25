@@ -11,6 +11,7 @@ import kotlinx.serialization.Serializable
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.utils.stripCloud
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -50,7 +51,7 @@ data class NodeFavoriteTarget(
 fun UIMessage.buildFavoritePreview(maxLength: Int = 160): String {
     val plainText = parts
         .filterIsInstance<UIMessagePart.Text>()
-        .joinToString("\n") { it.text.trim() }
+        .joinToString("\n") { (if (role == MessageRole.ASSISTANT) it.text.stripCloud() else it.text).trim() }
         .trim()
     if (plainText.isNotBlank()) {
         return plainText.take(maxLength)

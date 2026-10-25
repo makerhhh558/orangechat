@@ -192,6 +192,18 @@ fun SettingDisplayMessagePage(vm: SettingVM = koinViewModel()) {
                         },
                     )
                     item(
+                        headlineContent = { Text("隐藏思考链") },
+                        supportingContent = { Text("只在聊天界面隐藏，不影响模型思考") },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.hideReasoning,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(hideReasoning = it))
+                                }
+                            )
+                        },
+                    )
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_auto_collapse_thinking_title)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_auto_collapse_thinking_desc)) },
                         trailingContent = {

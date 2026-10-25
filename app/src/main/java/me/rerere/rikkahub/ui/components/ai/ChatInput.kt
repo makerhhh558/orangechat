@@ -108,7 +108,6 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getQuickMessagesOfAssistant
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
@@ -562,7 +561,8 @@ fun ChatInput(
                             ) {
                                 // Model Picker
                                 ModelSelector(
-                                    modelId = assistant.chatModelId ?: settings.chatModelId,
+                                    modelId = LocalCurrentChatModel.current?.id
+                                        ?: assistant.chatModelId ?: settings.chatModelId,
                                     providers = settings.providers,
                                     onSelect = {
                                         onUpdateChatModel(it)
@@ -576,7 +576,7 @@ fun ChatInput(
                                 // Search
                                 val enableSearchMsg = stringResource(R.string.web_search_enabled)
                                 val disableSearchMsg = stringResource(R.string.web_search_disabled)
-                                val chatModel = settings.getCurrentChatModel()
+                                val chatModel = LocalCurrentChatModel.current
                                 SearchPickerButton(
                                     enableSearch = enableSearch,
                                     settings = settings,
@@ -597,7 +597,7 @@ fun ChatInput(
                                 )
 
                                 // Reasoning
-                                val model = settings.getCurrentChatModel()
+                                val model = LocalCurrentChatModel.current
                                 if (model?.abilities?.contains(ModelAbility.REASONING) == true) {
                                     ReasoningButton(
                                         reasoningLevel = assistant.reasoningLevel,

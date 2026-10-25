@@ -91,6 +91,11 @@ fun SettingDisplayPage() {
                         supportingContent = { Text("用 CSS 自定义气泡、尖钩、头像、间距、语音样式") },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.SettingDisplayCloudThought) },
+                        headlineContent = { Text("☁️心里话") },
+                        supportingContent = { Text("AI 回复里的心里话、隐藏思考链") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingDisplayCodeInteraction) },
                         headlineContent = { Text("代码与交互") },
                         supportingContent = { Text("代码块、回车发送、滚动、音量键等") },

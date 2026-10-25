@@ -19,6 +19,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -32,6 +33,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.getAssistantById
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.ai.resolveConversationModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
@@ -110,10 +114,21 @@ class ChatVM(
         it.enableWebSearch
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    // 当前模型
-    val currentChatModel = settings.map { settings ->
-        settings.getCurrentChatModel()
-    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+    // 当前会话模型：会话 modelId > 助手默认 > 全局默认
+    private val resolvedChatModel = combine(settings, conversation) { settings, conversation ->
+        resolveConversationModel(
+            settings = settings,
+            conversationModelId = conversation.modelId,
+            assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant(),
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val currentChatModel: StateFlow<Model?> = resolvedChatModel.map { it?.model }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // 会话指定的模型已被删除，回退到了下一级
+    val chatModelFellBack: StateFlow<Boolean> = resolvedChatModel.map { it?.fellBack == true }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // 错误状态
     val errors: StateFlow<List<ChatError>> = chatService.errors
@@ -149,20 +164,10 @@ class ChatVM(
     }
 
     // 设置聊天模型
-    fun setChatModel(assistant: Assistant, model: Model) {
+    // 只改当前会话的模型，不动助手/全局默认
+    fun setChatModel(model: Model) {
         viewModelScope.launch {
-            settingsStore.update { settings ->
-                settings.copy(
-                    assistants = settings.assistants.map {
-                        if (it.id == assistant.id) {
-                            it.copy(
-                                chatModelId = model.id
-                            )
-                        } else {
-                            it
-                        }
-                    })
-            }
+            chatService.setConversationModel(_conversationId, model.id)
         }
     }
 

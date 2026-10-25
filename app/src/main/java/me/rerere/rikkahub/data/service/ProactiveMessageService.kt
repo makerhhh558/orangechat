@@ -506,7 +506,16 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val assistant = settings.assistants.find { it.id.toString() == proactiveSetting.assistantId }
                     ?: settings.getCurrentAssistant()
                 val assistantUuid = assistant.id
-                val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId)
+                // 找到最近的对话
+                val recentConversations = conversationRepository.getRecentConversations(assistantUuid, limit = 1)
+                val conversation = if (recentConversations.isNotEmpty()) {
+                    conversationRepository.getConversationById(recentConversations.first().id)
+                } else null
+
+                // 优先用该会话固定的模型
+                val model = me.rerere.rikkahub.data.ai.resolveConversationModel(
+                    settings, conversation?.modelId, assistant
+                ).model
 
                 if (model == null) {
                     Log.e(ProactiveMessageService.TAG, "No model found for proactive message")
@@ -514,12 +523,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     stopSelf()
                     return@launch
                 }
-
-                // 找到最近的对话
-                val recentConversations = conversationRepository.getRecentConversations(assistantUuid, limit = 1)
-                val conversation = if (recentConversations.isNotEmpty()) {
-                    conversationRepository.getConversationById(recentConversations.first().id)
-                } else null
 
                 conversationId = conversation?.id ?: kotlin.uuid.Uuid.random()
                 val conversationId = conversationId!!

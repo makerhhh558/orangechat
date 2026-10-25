@@ -32,7 +32,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +72,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.VoiceCallService
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.context.LocalCurrentChatModel
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
@@ -265,6 +268,15 @@ private fun ChatPageContent(
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
+    val chatModelFellBack by vm.chatModelFellBack.collectAsStateWithLifecycle()
+    var fallbackNotified by remember(conversation.id) { mutableStateOf(false) }
+    LaunchedEffect(conversation.id, chatModelFellBack) {
+        if (chatModelFellBack && !fallbackNotified) {
+            fallbackNotified = true
+            toaster.show("该会话的模型已被删除，已回退到默认模型", type = ToastType.Warning)
+        }
+    }
+
     Surface(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
@@ -275,6 +287,7 @@ private fun ChatPageContent(
                 TopBar(
                     settings = setting,
                     conversation = conversation,
+                    currentChatModel = currentChatModel,
                     bigScreen = bigScreen,
                     drawerState = drawerState,
                     previewMode = previewMode,
@@ -304,6 +317,7 @@ private fun ChatPageContent(
                 )
             },
             bottomBar = {
+                CompositionLocalProvider(LocalCurrentChatModel provides currentChatModel) {
                 ChatInput(
                     state = inputState,
                     loading = loadingJob != null,
@@ -370,7 +384,7 @@ private fun ChatPageContent(
                         inputState.clearInput()
                     },
                     onUpdateChatModel = {
-                        vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it)
+                        vm.setChatModel(it)
                     },
                     onUpdateAssistant = {
                         vm.updateSettings(
@@ -402,6 +416,7 @@ private fun ChatPageContent(
                         vm.saveWindowSummary(content, onSaved, onError)
                     },
                 )
+                }
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
@@ -488,6 +503,7 @@ private fun ChatPageContent(
 private fun TopBar(
     settings: Settings,
     conversation: Conversation,
+    currentChatModel: Model?,
     drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
@@ -529,7 +545,7 @@ private fun TopBar(
             ) {
                 Column {
                     val assistant = settings.getCurrentAssistant()
-                    val model = settings.getCurrentChatModel()
+                    val model = currentChatModel
                     val provider = model?.findProvider(providers = settings.providers, checkOverwrite = false)
                     Text(
                         text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },

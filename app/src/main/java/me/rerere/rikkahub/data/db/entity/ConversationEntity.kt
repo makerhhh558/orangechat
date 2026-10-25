@@ -32,4 +32,6 @@ data class ConversationEntity(
     val customSystemPrompt: String = "",
     @ColumnInfo("folder_id", defaultValue = "")
     val folderId: String = "",
+    @ColumnInfo("model_id")
+    val modelId: String? = null,
 )

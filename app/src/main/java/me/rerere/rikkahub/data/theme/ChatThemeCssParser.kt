@@ -30,6 +30,15 @@ package me.rerere.rikkahub.data.theme
  * .message-list          消息列表布局（亦可写 .chat），消息间距属性名为 gap
  *                        （别名 spacing / row-gap / margin / margin-bottom / message-spacing）
  * .voice                 语音气泡（亦可写 .voice-bubble）
+ * .cloud-icon            心里话图标（亦可写 .cloud）
+ * .cloud-popup           心里话弹窗（亦可写 .cloud-panel）
+ * .cloud-text            心里话文字
+ * .cloud-mood            心情胶囊
+ * .cloud-bar-row         进度条整行
+ * .cloud-bar-label       进度条名字
+ * .cloud-bar             进度条轨道
+ * .cloud-bar-fill        进度条填充（.low / .mid / .high 分档）
+ * .cloud-bar-value       进度条数值
  * ```
  */
 object ChatThemeCssParser {
@@ -230,6 +239,10 @@ object ChatThemeCssParser {
     private enum class Target {
         USER_BUBBLE, ASSISTANT_BUBBLE, USER_AVATAR, ASSISTANT_AVATAR, MESSAGE,
         USER_VOICE, ASSISTANT_VOICE,
+        CLOUD_ICON, CLOUD_POPUP, CLOUD_TEXT,
+        CLOUD_MOOD, CLOUD_BAR_ROW, CLOUD_BAR_LABEL, CLOUD_BAR,
+        CLOUD_BAR_FILL, CLOUD_BAR_FILL_LOW, CLOUD_BAR_FILL_MID, CLOUD_BAR_FILL_HIGH,
+        CLOUD_BAR_VALUE,
     }
 
     /** 把类选择器映射到作用目标；无法识别时返回空列表 */
@@ -254,6 +267,16 @@ object ChatThemeCssParser {
                 "user-voice", "voice-user" -> canonical += listOf("voice", "user")
                 "assistant-voice", "voice-assistant" -> canonical += listOf("voice", "assistant")
                 "voice", "voice-bubble", "audio", "audio-bubble" -> canonical += "voice"
+                "cloud-icon", "cloud" -> canonical += "cloud-icon"
+                "cloud-popup", "cloud-panel" -> canonical += "cloud-popup"
+                "cloud-text" -> canonical += "cloud-text"
+                "cloud-mood" -> canonical += "cloud-mood"
+                "cloud-bar-row" -> canonical += "cloud-bar-row"
+                "cloud-bar-label" -> canonical += "cloud-bar-label"
+                "cloud-bar" -> canonical += "cloud-bar"
+                "cloud-bar-fill" -> canonical += "cloud-bar-fill"
+                "cloud-bar-value" -> canonical += "cloud-bar-value"
+                "low", "mid", "high" -> canonical += cls
                 else -> return emptyList()
             }
         }
@@ -261,6 +284,22 @@ object ChatThemeCssParser {
         val assistant = "assistant" in canonical
         return when {
             "message-list" in canonical -> listOf(Target.MESSAGE)
+            "cloud-icon" in canonical -> listOf(Target.CLOUD_ICON)
+            "cloud-popup" in canonical -> listOf(Target.CLOUD_POPUP)
+            "cloud-text" in canonical -> listOf(Target.CLOUD_TEXT)
+            "cloud-mood" in canonical -> listOf(Target.CLOUD_MOOD)
+            "cloud-bar-row" in canonical -> listOf(Target.CLOUD_BAR_ROW)
+            "cloud-bar-label" in canonical -> listOf(Target.CLOUD_BAR_LABEL)
+            "cloud-bar" in canonical -> listOf(Target.CLOUD_BAR)
+            "cloud-bar-value" in canonical -> listOf(Target.CLOUD_BAR_VALUE)
+            "cloud-bar-fill" in canonical -> when {
+                "low" in canonical -> listOf(Target.CLOUD_BAR_FILL_LOW)
+                "mid" in canonical -> listOf(Target.CLOUD_BAR_FILL_MID)
+                "high" in canonical -> listOf(Target.CLOUD_BAR_FILL_HIGH)
+                else -> listOf(Target.CLOUD_BAR_FILL)
+            }
+            // .low / .mid / .high 单独写没有意义
+            "low" in canonical || "mid" in canonical || "high" in canonical -> emptyList()
             "voice" in canonical -> when {
                 user && !assistant -> listOf(Target.USER_VOICE)
                 assistant && !user -> listOf(Target.ASSISTANT_VOICE)
@@ -313,6 +352,42 @@ object ChatThemeCssParser {
 
                 Target.ASSISTANT_VOICE ->
                     out.copy(assistantVoice = applyVoice(out.assistantVoice, declarations, ctx, report))
+
+                Target.CLOUD_ICON ->
+                    out.copy(cloudIcon = applyCloudIcon(out.cloudIcon, declarations, ctx, report))
+
+                Target.CLOUD_POPUP ->
+                    out.copy(cloudPopup = applyCloudPopup(out.cloudPopup, declarations, ctx, report))
+
+                Target.CLOUD_TEXT ->
+                    out.copy(cloudText = applyCloudText(out.cloudText, declarations, ctx, report))
+
+                Target.CLOUD_MOOD ->
+                    out.copy(cloudMood = applyCloudBox(out.cloudMood, declarations, ctx, report))
+
+                Target.CLOUD_BAR_ROW ->
+                    out.copy(cloudBarRow = applyCloudBox(out.cloudBarRow, declarations, ctx, report))
+
+                Target.CLOUD_BAR_LABEL ->
+                    out.copy(cloudBarLabel = applyCloudBox(out.cloudBarLabel, declarations, ctx, report))
+
+                Target.CLOUD_BAR ->
+                    out.copy(cloudBar = applyCloudBox(out.cloudBar, declarations, ctx, report))
+
+                Target.CLOUD_BAR_FILL ->
+                    out.copy(cloudBarFill = applyCloudBox(out.cloudBarFill, declarations, ctx, report))
+
+                Target.CLOUD_BAR_FILL_LOW ->
+                    out.copy(cloudBarFillLow = applyCloudBox(out.cloudBarFillLow, declarations, ctx, report))
+
+                Target.CLOUD_BAR_FILL_MID ->
+                    out.copy(cloudBarFillMid = applyCloudBox(out.cloudBarFillMid, declarations, ctx, report))
+
+                Target.CLOUD_BAR_FILL_HIGH ->
+                    out.copy(cloudBarFillHigh = applyCloudBox(out.cloudBarFillHigh, declarations, ctx, report))
+
+                Target.CLOUD_BAR_VALUE ->
+                    out.copy(cloudBarValue = applyCloudBox(out.cloudBarValue, declarations, ctx, report))
             }
         }
         return out
@@ -1376,6 +1451,284 @@ object ChatThemeCssParser {
 
             "border-image", "border-image-source", "border-image-slice", "border-image-width" ->
                 applyBorderImage(s.borderImage, d, ctx)?.let { s.copy(borderImage = it) }
+
+            else -> null
+        }
+    }
+
+    private fun applyCloudIcon(
+        initial: CloudIconStyle,
+        declarations: List<Decl>,
+        ctx: ParseContext,
+        report: Boolean,
+    ): CloudIconStyle = applyAll(initial, declarations, ctx, report) { s, d ->
+        when (d.property) {
+            "content", "background", "background-image", "image" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(imageSource = null, imageSourceLine = 0)
+                } else {
+                    url(d.value)?.let { s.copy(imageSource = it, imageSourceLine = d.line) }
+                        ?: s.also { ctx.badValue(d, "url(...) 或 none") }
+                }
+
+            "width", "height", "size", "font-size" ->
+                length(d.value)?.takeIf { it > 0f }?.let { s.copy(size = it) }
+                    ?: s.also { ctx.badValue(d, "正的长度值") }
+
+            "offset", "translate" -> offsetPair(d.value)?.let { (x, y) ->
+                s.copy(offsetX = x, offsetY = y)
+            } ?: s.also { ctx.badValue(d, "一个或两个长度值") }
+
+            "opacity" ->
+                alpha(d.value)?.let { s.copy(opacity = it) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            else -> null
+        }
+    }
+
+    private fun applyCloudPopup(
+        initial: CloudPopupStyle,
+        declarations: List<Decl>,
+        ctx: ParseContext,
+        report: Boolean,
+    ): CloudPopupStyle = applyAll(initial, declarations, ctx, report) { s, d ->
+        when (d.property) {
+            "border-radius" -> {
+                val v = d.value.trim()
+                if (v.endsWith("%")) {
+                    val p = v.dropLast(1).trim().toFloatOrNull()
+                    if (p != null && p.isFinite() && p >= 0f) {
+                        s.copy(cornerRadiusPercent = p.coerceAtMost(50f))
+                    } else {
+                        s.also { ctx.badValue(d, "长度或百分比") }
+                    }
+                } else {
+                    length(v)?.let { s.copy(cornerRadius = it, cornerRadiusPercent = null) }
+                        ?: s.also { ctx.badValue(d, "长度或百分比") }
+                }
+            }
+
+            "background" -> {
+                val gradient = linearGradient(d.value)
+                when {
+                    gradient != null -> s.copy(backgroundGradient = gradient, backgroundColor = null)
+                    else -> color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
+                        ?: s.also { ctx.badValue(d, "颜色值或 linear-gradient(...)") }
+                }
+            }
+
+            "background-color" ->
+                color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "opacity" ->
+                alpha(d.value)?.let { s.copy(backgroundOpacity = it) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            "padding" -> padding(d.value)?.let {
+                s.copy(paddingVertical = it.first, paddingHorizontal = it.second)
+            } ?: s.also { ctx.badValue(d, "1~4 个长度值") }
+
+            "padding-top", "padding-bottom", "padding-vertical" ->
+                length(d.value)?.let { s.copy(paddingVertical = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "padding-left", "padding-right", "padding-horizontal" ->
+                length(d.value)?.let { s.copy(paddingHorizontal = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "border" -> border(d.value)?.let { (w, c) ->
+                s.copy(borderWidth = w, borderColor = c ?: s.borderColor)
+            } ?: s.also { ctx.badValue(d, "如 1dp solid #ccc") }
+
+            "border-width" ->
+                length(d.value)?.let { s.copy(borderWidth = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "border-color" ->
+                color(d.value)?.let { s.copy(borderColor = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "box-shadow", "shadow" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(shadow = null)
+                } else {
+                    boxShadow(d.value)?.let { s.copy(shadow = it) }
+                        ?: s.also { ctx.badValue(d, "如 0 2dp 6dp rgba(0,0,0,0.1) 或 none") }
+                }
+
+            "max-width" ->
+                length(d.value)?.let { s.copy(maxWidth = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "sticker", "sticker-image" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(sticker = s.sticker.copy(source = null, sourceLine = 0))
+                } else {
+                    url(d.value)?.let {
+                        s.copy(sticker = s.sticker.copy(source = it, sourceLine = d.line))
+                    } ?: s.also { ctx.badValue(d, "url(\"cat.png\") 或 none") }
+                }
+
+            "sticker-size" ->
+                length(d.value)?.takeIf { it > 0f }?.let { s.copy(sticker = s.sticker.copy(size = it)) }
+                    ?: s.also { ctx.badValue(d, "正的长度值，如 24dp") }
+
+            "sticker-position", "sticker-corner" ->
+                parseStickerCorner(d.value)?.let { s.copy(sticker = s.sticker.copy(corner = it)) }
+                    ?: s.also { ctx.badValue(d, "top-left/top-right/bottom-left/bottom-right") }
+
+            "sticker-offset" -> offsetPair(d.value)?.let { (x, y) ->
+                s.copy(sticker = s.sticker.copy(offsetX = x, offsetY = y))
+            } ?: s.also { ctx.badValue(d, "一个或两个长度值，如 -6dp -4dp") }
+
+            "sticker-rotate" ->
+                angle(d.value)?.let { s.copy(sticker = s.sticker.copy(rotate = it)) }
+                    ?: s.also { ctx.badValue(d, "角度值，如 10deg 或 -10deg") }
+
+            "sticker-rotate-random" ->
+                angle(d.value)?.let { s.copy(sticker = s.sticker.copy(rotateRandom = kotlin.math.abs(it))) }
+                    ?: s.also { ctx.badValue(d, "角度值，如 8deg") }
+
+            "sticker-opacity" ->
+                alpha(d.value)?.let { s.copy(sticker = s.sticker.copy(opacity = it)) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            else -> null
+        }
+    }
+
+    private fun applyCloudText(
+        initial: CloudTextStyle,
+        declarations: List<Decl>,
+        ctx: ParseContext,
+        report: Boolean,
+    ): CloudTextStyle = applyAll(initial, declarations, ctx, report) { s, d ->
+        when (d.property) {
+            "font-size" ->
+                textUnit(d.value)?.let { s.copy(fontSize = it) }
+                    ?: s.also { ctx.badValue(d, "正的长度值，如 16sp 或 16dp") }
+
+            "font-weight" ->
+                fontWeight(d.value)?.let { s.copy(fontWeight = it) }
+                    ?: s.also { ctx.badValue(d, "normal/bold 或 100~900") }
+
+            "line-height" ->
+                if (d.value.trim().equals("normal", ignoreCase = true)) {
+                    s.copy(lineHeight = null)
+                } else {
+                    lineHeight(d.value)?.let { s.copy(lineHeight = it) }
+                        ?: s.also { ctx.badValue(d, "倍数如 1.5，或长度如 24sp") }
+                }
+
+            "letter-spacing" ->
+                if (d.value.trim().equals("normal", ignoreCase = true)) {
+                    s.copy(letterSpacing = null)
+                } else {
+                    textUnit(d.value, allowNegative = true)?.let { s.copy(letterSpacing = it) }
+                        ?: s.also { ctx.badValue(d, "长度值，如 0.5sp 或 -0.5dp") }
+                }
+
+            "font-family", "font" ->
+                fontFamily(d.value)?.let { s.copy(fontFamily = it) }
+                    ?: s.also { ctx.badValue(d, "serif/sans-serif/monospace 或 url(\"xxx.ttf\")") }
+
+            "color", "text-color" ->
+                color(d.value)?.let { s.copy(color = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            else -> null
+        }
+    }
+
+    /** 心情胶囊和进度条共用的盒子属性，范围和气泡一致。 */
+    private fun applyCloudBox(
+        initial: CloudBoxStyle,
+        declarations: List<Decl>,
+        ctx: ParseContext,
+        report: Boolean,
+    ): CloudBoxStyle = applyAll(initial, declarations, ctx, report) { s, d ->
+        when (d.property) {
+            "border-radius" -> {
+                val v = d.value.trim()
+                if (v.endsWith("%")) {
+                    val p = v.dropLast(1).trim().toFloatOrNull()
+                    if (p != null && p.isFinite() && p >= 0f) {
+                        s.copy(cornerRadiusPercent = p.coerceAtMost(50f))
+                    } else {
+                        s.also { ctx.badValue(d, "长度或百分比") }
+                    }
+                } else {
+                    length(v)?.let { s.copy(cornerRadius = it, cornerRadiusPercent = null) }
+                        ?: s.also { ctx.badValue(d, "长度或百分比") }
+                }
+            }
+
+            "background" -> {
+                val gradient = linearGradient(d.value)
+                when {
+                    gradient != null -> s.copy(backgroundGradient = gradient, backgroundColor = null)
+                    else -> color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
+                        ?: s.also { ctx.badValue(d, "颜色值或 linear-gradient(...)") }
+                }
+            }
+
+            "background-color" ->
+                color(d.value)?.let { s.copy(backgroundColor = it, backgroundGradient = null) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "opacity" ->
+                alpha(d.value)?.let { s.copy(opacity = it) }
+                    ?: s.also { ctx.badValue(d, "0~1 之间的数，或百分比") }
+
+            "padding" -> padding(d.value)?.let {
+                s.copy(paddingVertical = it.first, paddingHorizontal = it.second)
+            } ?: s.also { ctx.badValue(d, "1~4 个长度值") }
+
+            "padding-top", "padding-bottom", "padding-vertical" ->
+                length(d.value)?.let { s.copy(paddingVertical = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "padding-left", "padding-right", "padding-horizontal" ->
+                length(d.value)?.let { s.copy(paddingHorizontal = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "border" -> border(d.value)?.let { (w, c) ->
+                s.copy(borderWidth = w, borderColor = c ?: s.borderColor)
+            } ?: s.also { ctx.badValue(d, "如 1dp solid #ccc") }
+
+            "border-width" ->
+                length(d.value)?.let { s.copy(borderWidth = it) }
+                    ?: s.also { ctx.badValue(d, "长度值") }
+
+            "border-color" ->
+                color(d.value)?.let { s.copy(borderColor = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
+
+            "box-shadow", "shadow" ->
+                if (d.value.trim().equals("none", ignoreCase = true)) {
+                    s.copy(shadow = null)
+                } else {
+                    boxShadow(d.value)?.let { s.copy(shadow = it) }
+                        ?: s.also { ctx.badValue(d, "如 0 2dp 6dp rgba(0,0,0,0.1) 或 none") }
+                }
+
+            "height" ->
+                length(d.value)?.takeIf { it > 0f }?.let { s.copy(height = it) }
+                    ?: s.also { ctx.badValue(d, "正的长度值") }
+
+            "font-size" ->
+                textUnit(d.value)?.let { s.copy(fontSize = it) }
+                    ?: s.also { ctx.badValue(d, "正的长度值，如 16sp 或 16dp") }
+
+            "font-family", "font" ->
+                fontFamily(d.value)?.let { s.copy(fontFamily = it) }
+                    ?: s.also { ctx.badValue(d, "serif/sans-serif/monospace 或 url(\"xxx.ttf\")") }
+
+            "color", "text-color" ->
+                color(d.value)?.let { s.copy(color = it) }
+                    ?: s.also { ctx.badValue(d, "颜色值") }
 
             else -> null
         }

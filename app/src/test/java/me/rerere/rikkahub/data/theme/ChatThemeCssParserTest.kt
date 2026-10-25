@@ -11,6 +11,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import me.rerere.rikkahub.utils.CloudBarTier
+import me.rerere.rikkahub.utils.cloudBarTier
 import org.junit.Test
 
 class ChatThemeCssParserTest {
@@ -595,6 +597,211 @@ class ChatThemeCssParserTest {
         ).spec.userBubble
         assertEquals(8f, style.paddingVertical)
         assertEquals(12f, style.paddingHorizontal)
+    }
+
+    @Test
+    fun `心里话三个选择器各自生效且别名可用`() {
+        val css = """
+            .cloud-icon { content: url("heart.png"); size: 24dp; offset: 2dp -4dp; opacity: 0.8; }
+            .cloud { size: 30dp; }
+            .cloud-popup {
+              background: linear-gradient(to right, #ffffff, #eeeeee);
+              border-radius: 16dp;
+              padding: 10dp 14dp;
+              max-width: 200dp;
+              sticker: url("cat.png");
+            }
+            .cloud-text { color: #333333; font-size: 13sp; line-height: 1.4; }
+        """.trimIndent()
+        val result = ChatThemeCssParser.parse(css)
+        assertTrue(result.errors.isEmpty())
+        val icon = result.spec.cloudIcon
+        assertEquals("heart.png", icon.imageSource)
+        // 后写的 .cloud 别名覆盖 size，其余保持
+        assertEquals(30f, icon.size)
+        assertEquals(2f, icon.offsetX)
+        assertEquals(-4f, icon.offsetY)
+        assertEquals(0.8f, icon.opacity)
+        val popup = result.spec.cloudPopup
+        assertNotNull(popup.backgroundGradient)
+        assertEquals(16f, popup.cornerRadius)
+        assertEquals(10f, popup.paddingVertical)
+        assertEquals(14f, popup.paddingHorizontal)
+        assertEquals(200f, popup.maxWidth)
+        assertEquals("cat.png", popup.sticker.source)
+        val text = result.spec.cloudText
+        assertEquals(0xFF333333L, text.color)
+        assertEquals(13f, text.fontSize!!.value)
+        assertEquals(1.4f, text.lineHeight!!.value)
+    }
+
+    @Test
+    fun `心里话不认识的属性被忽略且 none 清空图片`() {
+        val result = ChatThemeCssParser.parse(
+            ".cloud-icon { content: none; animation: spin 1s; }"
+        )
+        assertNull(result.spec.cloudIcon.imageSource)
+        assertTrue(result.unknownProperties.any { it.text.contains("animation") })
+    }
+
+    @Test
+    fun `心情胶囊和进度条选择器生效且面板是弹窗别名`() {
+        val css = """
+            .cloud-panel { background: #fff8e7; border-radius: 16dp; }
+            .cloud-mood { background: #ffe4c4; color: #5c4033; font-size: 12sp; border-radius: 50%; }
+            .cloud-bar { height: 8dp; background: #f0e6d8; }
+            .cloud-bar-fill { background: #e8a87c; }
+            .cloud-bar-fill.low { background: #c4b5a0; }
+            .cloud-bar-label { color: #8a7560; }
+        """.trimIndent()
+        val result = ChatThemeCssParser.parse(css)
+        assertTrue(result.errors.isEmpty())
+        assertEquals(0xFFFFF8E7L, result.spec.cloudPopup.backgroundColor)
+        assertEquals(0xFFFFE4C4L, result.spec.cloudMood.backgroundColor)
+        assertEquals(50f, result.spec.cloudMood.cornerRadiusPercent)
+        assertEquals(8f, result.spec.cloudBar.height)
+        assertEquals(0xFFE8A87CL, result.spec.cloudBarFill.backgroundColor)
+        assertEquals(0xFFC4B5A0L, result.spec.cloudBarFillLow.backgroundColor)
+        assertEquals(0xFF8A7560L, result.spec.cloudBarLabel.color)
+    }
+
+    @Test
+    fun `进度条分档没写的字段回落到基础填充`() {
+        val fill = CloudBoxStyle(backgroundColor = 0xFFE8A87CL, height = 6f)
+        val low = CloudBoxStyle(backgroundColor = 0xFFC4B5A0L)
+        val merged = low.mergeOver(fill)
+        assertEquals(0xFFC4B5A0L, merged.backgroundColor)
+        assertEquals(6f, merged.height)
+    }
+
+    @Test
+    fun `单独的分档选择器算未知`() {
+        val result = ChatThemeCssParser.parse(".low { background: red; }")
+        assertTrue(result.unknownProperties.any { it.text.contains(".low") })
+        assertNull(result.spec.cloudBarFillLow.backgroundColor)
+    }
+
+    private fun assertSelectorKnown(selector: String, result: ChatThemeParseResult) {
+        assertTrue(
+            "$selector 被报成未知：${result.unknownProperties}",
+            result.unknownProperties.none { it.text.contains(selector) },
+        )
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun `cloud-mood 选择器识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-mood { color: #112233; }")
+        assertSelectorKnown(".cloud-mood", r)
+        assertEquals(0xFF112233L, r.spec.cloudMood.color)
+    }
+
+    @Test
+    fun `cloud-bar-row 选择器识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar-row { padding: 4dp 6dp; }")
+        assertSelectorKnown(".cloud-bar-row", r)
+        assertEquals(4f, r.spec.cloudBarRow.paddingVertical)
+        assertEquals(6f, r.spec.cloudBarRow.paddingHorizontal)
+    }
+
+    @Test
+    fun `cloud-bar 选择器识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar { height: 7dp; background: #abcdef; }")
+        assertSelectorKnown(".cloud-bar", r)
+        assertEquals(7f, r.spec.cloudBar.height)
+        assertEquals(0xFFABCDEFL, r.spec.cloudBar.backgroundColor)
+    }
+
+    @Test
+    fun `cloud-bar-label 选择器识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar-label { color: #445566; }")
+        assertSelectorKnown(".cloud-bar-label", r)
+        assertEquals(0xFF445566L, r.spec.cloudBarLabel.color)
+    }
+
+    @Test
+    fun `cloud-bar-value 选择器识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar-value { color: #778899; }")
+        assertSelectorKnown(".cloud-bar-value", r)
+        assertEquals(0xFF778899L, r.spec.cloudBarValue.color)
+    }
+
+    @Test
+    fun `cloud-bar-fill 选择器识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar-fill { background: #010203; }")
+        assertSelectorKnown(".cloud-bar-fill", r)
+        assertEquals(0xFF010203L, r.spec.cloudBarFill.backgroundColor)
+        assertNull(r.spec.cloudBarFillLow.backgroundColor)
+    }
+
+    @Test
+    fun `cloud-bar-fill-low 复合选择器整体识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar-fill.low { background: #0a0b0c; }")
+        assertSelectorKnown(".cloud-bar-fill.low", r)
+        assertEquals(0xFF0A0B0CL, r.spec.cloudBarFillLow.backgroundColor)
+        assertNull(r.spec.cloudBarFill.backgroundColor)
+    }
+
+    @Test
+    fun `cloud-bar-fill-mid 复合选择器整体识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar-fill.mid { background: #0d0e0f; }")
+        assertSelectorKnown(".cloud-bar-fill.mid", r)
+        assertEquals(0xFF0D0E0FL, r.spec.cloudBarFillMid.backgroundColor)
+        assertNull(r.spec.cloudBarFill.backgroundColor)
+    }
+
+    @Test
+    fun `cloud-bar-fill-high 复合选择器整体识别`() {
+        val r = ChatThemeCssParser.parse(".cloud-bar-fill.high { background: #102030; }")
+        assertSelectorKnown(".cloud-bar-fill.high", r)
+        assertEquals(0xFF102030L, r.spec.cloudBarFillHigh.backgroundColor)
+        assertNull(r.spec.cloudBarFill.backgroundColor)
+    }
+
+    @Test
+    fun `单独的 mid 和 high 也算未知`() {
+        val r = ChatThemeCssParser.parse(".mid { background: red; }\n.high { background: red; }")
+        assertTrue(r.unknownProperties.any { it.text.contains(".mid") })
+        assertTrue(r.unknownProperties.any { it.text.contains(".high") })
+        assertNull(r.spec.cloudBarFillMid.backgroundColor)
+        assertNull(r.spec.cloudBarFillHigh.backgroundColor)
+    }
+
+    @Test
+    fun `解析结果按渲染组件的取法落到胶囊和三档进度条`() {
+        val css = """
+            .cloud-mood { background: #ffe4c4; color: #5c4033; }
+            .cloud-bar { height: 8dp; background: #f0e6d8; }
+            .cloud-bar-fill { background: #999999; height: 5dp; }
+            .cloud-bar-fill.low { background: #111111; }
+            .cloud-bar-fill.mid { background: #222222; }
+            .cloud-bar-fill.high { background: #333333; }
+        """.trimIndent()
+        val spec = ChatThemeCssParser.parse(css).spec
+        // 与 CloudThought.kt 中 CloudBarTrack 的取法一致
+        fun fillFor(v: Float) = when (cloudBarTier(v)) {
+            CloudBarTier.LOW -> spec.cloudBarFillLow
+            CloudBarTier.MID -> spec.cloudBarFillMid
+            CloudBarTier.HIGH -> spec.cloudBarFillHigh
+        }.mergeOver(spec.cloudBarFill)
+
+        assertEquals(0xFF111111L, fillFor(30f).backgroundColor)
+        assertEquals(0xFF222222L, fillFor(60f).backgroundColor)
+        assertEquals(0xFF333333L, fillFor(92f).backgroundColor)
+        assertEquals(5f, fillFor(92f).height)
+        assertEquals(0xFF111111L, fillFor(40f).backgroundColor)
+        assertEquals(0xFF222222L, fillFor(41f).backgroundColor)
+        assertEquals(0xFF222222L, fillFor(75f).backgroundColor)
+        assertEquals(0xFF333333L, fillFor(76f).backgroundColor)
+        assertEquals(8f, spec.cloudBar.height)
+        assertEquals(0xFFFFE4C4L, spec.cloudMood.backgroundColor)
+        assertEquals(0xFF5C4033L, spec.cloudMood.color)
+    }
+
+    @Test
+    fun `分档没写时回落到基础填充`() {
+        val spec = ChatThemeCssParser.parse(".cloud-bar-fill { background: #999999; }").spec
+        assertEquals(0xFF999999L, spec.cloudBarFillMid.mergeOver(spec.cloudBarFill).backgroundColor)
     }
 
     @Test

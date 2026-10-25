@@ -105,6 +105,7 @@ import com.dokar.sonner.rememberToasterState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.exportImage
+import me.rerere.rikkahub.utils.stripCloud
 import me.rerere.rikkahub.utils.getActivity
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
@@ -262,7 +263,7 @@ private fun exportToMarkdown(
             message.parts.forEach { part ->
                 when (part) {
                     is UIMessagePart.Text -> {
-                        append(part.text)
+                        append(if (message.role == MessageRole.ASSISTANT) part.text.stripCloud() else part.text)
                         appendLine()
                     }
 
@@ -585,6 +586,7 @@ private fun ExportedChatMessage(
                     is MessagePartBlock.ContentBlock -> {
                         when (val part = block.part) {
                             is UIMessagePart.Text -> {
+                                val part = if (message.role == MessageRole.ASSISTANT) part.copy(text = part.text.stripCloud()) else part
                                 if (part.text.isNotBlank()) {
                                     ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
                                         if (message.role == MessageRole.USER) {

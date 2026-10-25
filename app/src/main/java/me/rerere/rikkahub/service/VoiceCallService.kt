@@ -37,6 +37,7 @@ import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.VOICE_CALL_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.utils.toDisplayText
 import me.rerere.rikkahub.ui.hooks.CustomAsrState
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.rikkahub.ui.hooks.createCustomAsrState
@@ -447,10 +448,13 @@ class VoiceCallService : Service(), KoinComponent {
                 val lastMessage = conv.currentMessages.lastOrNull()
                 if (lastMessage?.role != MessageRole.ASSISTANT) return@collect
 
-                val currentText = lastMessage.toText()
+                val currentText = lastMessage.toDisplayText()
 
                 // 更新 UI 显示的 AI 回复
                 _uiState.update { it.copy(assistantText = currentText) }
+
+                // 心里话标签被摘掉后正文会变短，游标要跟着退回去，避免漏读或重读
+                if (currentText.length < ttsSentLength) ttsSentLength = currentText.length
 
                 // 流式 TTS: 只朗读新增的部分
                 if (currentText.length > ttsSentLength) {

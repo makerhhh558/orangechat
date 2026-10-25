@@ -139,6 +139,7 @@ import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayChatThemePage
+import me.rerere.rikkahub.ui.pages.setting.SettingDisplayCloudThoughtPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayCodeInteractionPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayColorPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayGeneralPage
@@ -585,6 +586,9 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingDisplayChatTheme> {
                                 SettingDisplayChatThemePage()
                             }
+                            entry<Screen.SettingDisplayCloudThought> {
+                                SettingDisplayCloudThoughtPage()
+                            }
                             entry<Screen.SettingDisplayNotification> {
                                 SettingDisplayNotificationPage()
                             }
@@ -1006,6 +1010,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingDisplayChatTheme : Screen
+
+    @Serializable
+    data object SettingDisplayCloudThought : Screen
 
     @Serializable
     data object SettingProvider : Screen

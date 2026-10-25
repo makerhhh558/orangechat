@@ -35,6 +35,8 @@ data class Conversation(
     val workspaceCwd: String? = null,
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,
+    // 会话固定使用的聊天模型，null 表示尚未绑定
+    val modelId: Uuid? = null,
     @Transient
     val newConversation: Boolean = false
 ) {

@@ -33,6 +33,7 @@ import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_CLOUD_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_COMPRESS_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
@@ -731,6 +732,11 @@ data class DisplaySetting(
     // CSS 聊天主题：themes/<名称>/*.css，空=使用内置默认样式
     val chatThemeName: String = "",
     val chatThemeEnabled: Boolean = false,
+    /** 聊天界面不显示 reasoning 块，不影响请求和存储 */
+    val hideReasoning: Boolean = false,
+    /** 注入心里话提示词，并在回复旁显示 ☁️ */
+    val cloudThoughtEnabled: Boolean = true,
+    val cloudThoughtPrompt: String = DEFAULT_CLOUD_PROMPT,
 )
 
 @Serializable

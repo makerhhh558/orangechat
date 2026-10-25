@@ -154,6 +154,7 @@ import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.openUrl
 import coil3.compose.AsyncImage
 import org.koin.compose.koinInject
+import me.rerere.rikkahub.utils.parseCloudThought
 import me.rerere.rikkahub.utils.splitIntoBubbleSegments
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
@@ -460,14 +461,21 @@ private fun MessagePartsBlock(
  
     // Render parts in original order (group thinking/tool as chain-of-thought)
     val groupedParts = remember(parts) { parts.groupMessageParts() }
+    // 心里话图标只挂在第一条文字气泡上
+    val firstTextIndex = remember(groupedParts) {
+        groupedParts.firstNotNullOfOrNull { (it as? MessagePartBlock.ContentBlock)?.takeIf { b -> b.part is UIMessagePart.Text }?.index }
+    }
     groupedParts.fastForEach { block ->
         when (block) {
             is MessagePartBlock.ThinkingBlock -> {
-                if (block.steps.isNotEmpty()) {
-                    val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
+                val steps = remember(block.steps, displaySettings.hideReasoning) {
+                    if (displaySettings.hideReasoning) block.steps.filterNot { it is ThinkingStep.ReasoningStep } else block.steps
+                }
+                if (steps.isNotEmpty()) {
+                    val isReasoningOnlyBlock = steps.fastAll { it is ThinkingStep.ReasoningStep }
                     ChainOfThought(
                         modifier = Modifier.animateContentSize(),
-                        steps = block.steps,
+                        steps = steps,
                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
                     ) { step ->
                         when (step) {
@@ -501,9 +509,16 @@ private fun MessagePartsBlock(
             is MessagePartBlock.ContentBlock -> key(block.index) {
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
-                        // 从显示文本中移除[zip:...]标记
-                        val displayText = remember(part.text) {
-                            part.text.replace(Regex("\\[zip:[^\\]]+\\]", RegexOption.IGNORE_CASE), "")
+                        // 从显示文本中移除[zip:...]标记，助手消息再摘掉心里话标签
+                        val displayText = remember(part.text, role) {
+                            val t = part.text.replace(Regex("\\[zip:[^\\]]+\\]", RegexOption.IGNORE_CASE), "")
+                            if (role == MessageRole.ASSISTANT) parseCloudThought(t).body else t
+                        }
+                        // 只在第一条文字上取第一段心里话；开关关掉后图标不显示，正文照样过滤
+                        val cloudToShow = remember(part.text, role, displaySettings.cloudThoughtEnabled, firstTextIndex) {
+                            if (role == MessageRole.ASSISTANT && displaySettings.cloudThoughtEnabled && block.index == firstTextIndex) {
+                                parseCloudThought(part.text).cloud
+                            } else null
                         }
                         
                         // 字体属性在这里统一注入：下面六处 MarkdownBlock 都吃
@@ -582,8 +597,12 @@ private fun MessagePartsBlock(
                                     Column(
                                         verticalArrangement = Arrangement.spacedBy(assistantBubbleStyle.segmentSpacing.dp),
                                     ) {
+                                        if (bubbleSegments.isEmpty() && cloudToShow != null) {
+                                            CloudThoughtAnchor(cloudToShow)
+                                        }
                                         bubbleSegments.fastForEachIndexed { segIndex, segment ->
                                             key(segIndex) {
+                                                CloudThoughtRow(cloud = if (segIndex == 0) cloudToShow else null) {
                                                 if (displaySettings.showAssistantBubble) {
                                                     BubbleSurface(
                                                         imagePath = displaySettings.assistantBubbleImagePath,
@@ -617,10 +636,14 @@ private fun MessagePartsBlock(
                                                             .animateContentSize()
                                                     )
                                                 }
+                                                }
                                             }
                                         }
                                     }
                                 } else {
+                                    if (displayText.isBlank() && cloudToShow != null) {
+                                        CloudThoughtAnchor(cloudToShow)
+                                    } else CloudThoughtRow(cloud = cloudToShow) {
                                     if (displaySettings.showAssistantBubble) {
                                         BubbleSurface(
                                             imagePath = displaySettings.assistantBubbleImagePath,
@@ -653,6 +676,7 @@ private fun MessagePartsBlock(
                                             modifier = Modifier
                                                 .animateContentSize()
                                         )
+                                    }
                                     }
                                 }
                                 
@@ -1060,7 +1084,7 @@ private fun BubbleSurface(
  * - 贴纸层不接收触摸（没有 clickable / pointerInput），长按复制、点击重发都不受影响
  */
 @Composable
-private fun BubbleStickerBox(
+internal fun BubbleStickerBox(
     sticker: BubbleSticker,
     seed: Int,
     content: @Composable () -> Unit,
